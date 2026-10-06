@@ -10,8 +10,9 @@ sensor names. Incoming columns are mapped explicitly to the tokenizer order:
 The frontend uses third-order Butterworth SOS filtering (`sosfiltfilt`) at
 20–399.5 Hz and `resample_poly(1,2)`, with the historical float32 casts.
 No additional normalization is applied. Each independent 200-ms patch uses the
-last learned temporal embedding; the tokenizer produces four branches and four
-RVQ levels at 25 Hz. Low-level pose input is int64 `[batch,150,16,4,4]`.
+last learned temporal embedding (index 255 of 256); the tokenizer produces four
+branches and four RVQ levels at 25 Hz. Low-level pose input is int64 `[batch,150,16,4,4]`.
+The 16-frame storage block does not determine the embedding index.
 
 Historical storage rounded token counts down to multiples of 16. Window planning
 preserves that truncation and the original full-context raw-sample bound. Short
@@ -47,9 +48,27 @@ times = plan.boundary_timestamps_s
 
 Supply `initial_poses_rad` of shape `[len(times),20]` and
 `boundary_timestamps_s=times` to `PosePredictor.predict`. These are caller-provided
-measurements/initializations in radians; the API checks shape, finiteness and
-alignment. Use the same `max_windows` for planning and predicting if limiting a run.
-For the CLI, save those two arrays in an NPZ and pass `--boundary-poses boundary.npz`.
+valid measurements in radians; the API checks shape, finiteness and alignment.
+All-zero boundary rows are rejected, matching emg2pose's invalid-IK convention.
+Angles exceeding one full turn (`2*pi` radians) are also rejected as a unit sanity
+check. This is not an anatomical validator and cannot detect every degrees/radians
+mix-up. Invalid boundaries fail the request rather than silently dropping windows.
+Use the same `max_windows` for planning and predicting if limiting a run.
+
+For the CLI, prepare the measured poses in the joint order below and save:
+
+```python
+import numpy as np
+from emg_gpt import plan_windows
+
+plan = plan_windows(len(raw_emg), "tracking", max_windows=1)
+# measured_poses_rad: one valid measurement per plan.boundary_timestamps_s.
+np.savez("boundary.npz", initial_poses_rad=measured_poses_rad,
+         boundary_timestamps_s=plan.boundary_timestamps_s)
+```
+
+Pass `--model-dir weights/tracking --boundary-poses boundary.npz --max-windows 1`
+to the same prediction command used for Regression.
 Never label an independently carried prediction as ground-truth initialization.
 
 ## Prediction NPZ
@@ -64,10 +83,31 @@ Load with `numpy.load(path, allow_pickle=False)`:
 | `window_token_starts` | `[W]` context starts at 25 Hz |
 | `valid` | `[W,250]` finite-output flags; not dataset ground-truth validity |
 | `coverage_mask`, `coverage_timestamps_s` | Full recording's 50-Hz grid, true only at predicted times |
-| `metadata_json` | Scalar JSON string: task, units, preprocessing, window policy, device and artifact hashes |
+| `metadata_json` | Scalar JSON: task, units, preprocessing, window policy, code version, device, token batch size/index, pinned-bundle status and artifact hashes |
 
 Uncovered times have no predicted angle. There is no interpolation across gaps.
 Joint order is thumb CMC-FE, CMC-AA, MCP-FE, IP-FE; then index, middle, ring and
 pinky, each MCP-AA, MCP-FE, PIP-FE, DIP-FE. FE denotes flexion/extension and AA
 abduction/adduction, using the pinned emg2pose convention. Output contains joint
 angles only, not fingertip positions or hand meshes.
+
+Saved predictions and downloaded tokenizer files default to owner-only access
+(`0600`). Set group permissions explicitly if sharing these files.
+
+## Reproducibility
+
+The corrected release was compared with the original research tokenizer, dataset
+and pose checkpoints on two validation recordings, two windows per task and
+recording: 303,104 token-ID comparisons and 40,000 predicted joint angles matched
+exactly. Both tasks also passed API/CLI output parity. This check used CPU,
+Python 3.12, PyTorch 2.14.1 and token batch size 16; it is not a benchmark rerun.
+
+`PosePredictor` and the CLI require an official bundle from the packaged artifact
+catalog. The low-level `emg_gpt.bundle.load_pose_model_bundle` can load other
+self-consistent bundles; use `require_pinned=True` to require official identity.
+Integrity against a bundle's own manifest alone does not establish that identity.
+
+Exact parity requires the same device, runtime, preprocessing and token batch
+size (default 16). Small floating-point differences can change a nearest-code
+decision; bitwise equivalence across batch sizes or hardware is not promised.
+The pinned CPU constraints and minimum-runtime constraints serve different tests.

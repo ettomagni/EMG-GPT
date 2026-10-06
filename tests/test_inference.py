@@ -95,7 +95,19 @@ def test_raw_input_errors(fake_predictor, fault):
         model.predict(raw, **options)
 
 
-@pytest.mark.parametrize("fault", ["missing", "shape", "nan", "timestamp"])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing",
+        "shape",
+        "nan",
+        "timestamp",
+        "zeros",
+        "degrees",
+        "negative_degrees",
+        "integer_limit",
+    ],
+)
 def test_tracking_requires_aligned_explicit_boundaries(fake_predictor, fault):
     model = fake_predictor("tracking")
     options = {}
@@ -105,12 +117,32 @@ def test_tracking_requires_aligned_explicit_boundaries(fake_predictor, fault):
             options["initial_poses_rad"] = np.ones(20)
         elif fault == "nan":
             options["initial_poses_rad"][0, 0] = np.nan
-        else:
+        elif fault == "timestamp":
             options["boundary_timestamps_s"][0] = 1.20
+        elif fault == "zeros":
+            options["initial_poses_rad"][:] = 0
+        elif fault == "integer_limit":
+            options["initial_poses_rad"] = np.full((1, 20), np.iinfo(np.int64).min)
+        else:
+            options["initial_poses_rad"][0, 0] = 45 if fault == "degrees" else -45
     with pytest.raises(ValueError):
         model.predict(
             np.zeros((14000, 16)), sampling_rate_hz=2000, channel_names=RAW_CHANNELS, **options
         )
+
+
+def test_tracking_allows_zero_joints_in_a_valid_pose(fake_predictor):
+    model = fake_predictor("tracking")
+    initial = np.zeros((1, 20), dtype=np.float32)
+    initial[0, 1] = 0.2
+    prediction = model.predict(
+        np.zeros((14000, 16)),
+        sampling_rate_hz=2000,
+        channel_names=RAW_CHANNELS,
+        initial_poses_rad=initial,
+        boundary_timestamps_s=np.array([1.24]),
+    )
+    assert np.array_equal(prediction.joint_angles_rad[0, 0], initial[0])
 
 
 @pytest.mark.parametrize("task", ["regression", "tracking"])

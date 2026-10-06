@@ -6,7 +6,7 @@ new-code license is still required.
 
 ## NeuroRVQ compatibility implementation
 
-`src/NeuroRVQ_EMG/` is adapted from
+`src/emg_gpt/neurorvq/` is adapted from
 [KonstantinosBarmpas/NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ/tree/926e770d9d16b6aa308404280fa0cc0211a6f9fb)
 at public revision `926e770d9d16b6aa308404280fa0cc0211a6f9fb`.
 Its [CC BY-NC 4.0 terms](LICENSE) are included; one malformed quotation in

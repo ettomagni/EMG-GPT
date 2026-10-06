@@ -123,5 +123,56 @@ def test_cli_help_and_runtime_import_isolation():
         [sys.executable, "-m", "emg_gpt.cli", "--help"], capture_output=True, text=True
     )
     assert result.returncode == 0 and "--boundary-poses" in result.stdout
-    code = "from emg_gpt import PosePredictor; import sys; assert not any(x in sys.modules for x in ['pandas','h5py','emg_gpt.training_state','emg_pose.data','emg2pose'])"
+    code = "from emg_gpt import PosePredictor; import sys; assert not any(x in sys.modules for x in ['pandas','h5py','emg_gpt.training_state','emg_pose','NeuroRVQ_EMG','emg2pose'])"
     assert subprocess.run([sys.executable, "-c", code], capture_output=True).returncode == 0
+
+
+def test_vendored_packages_do_not_import_names_from_working_directory(tmp_path):
+    for name in ("NeuroRVQ_EMG", "emg_pose"):
+        package = tmp_path / name
+        package.mkdir()
+        (package / "__init__.py").write_text("raise RuntimeError('unrelated package imported')")
+    result = subprocess.run(
+        [sys.executable, "-c", "from emg_gpt import PosePredictor"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("fault", ["missing", "pickle", "not_found"])
+def test_cli_boundary_errors_name_the_argument(tmp_path, capsys, fault):
+    raw = tmp_path / "raw.npz"
+    np.savez(
+        raw,
+        emg=np.zeros((14000, 16)),
+        sampling_rate_hz=2000,
+        channel_names=np.asarray(RAW_CHANNELS),
+    )
+    boundary = tmp_path / "boundary.npz"
+    if fault == "missing":
+        np.savez(boundary, initial_poses_rad=np.ones((1, 20)))
+    elif fault == "pickle":
+        np.savez(
+            boundary,
+            initial_poses_rad=np.ones((1, 20), dtype=object),
+            boundary_timestamps_s=np.array([1.24]),
+        )
+    with pytest.raises(SystemExit) as error:
+        cli.main(
+            [
+                "--model-dir",
+                str(tmp_path),
+                "--tokenizer",
+                "unused.pt",
+                "--input",
+                str(raw),
+                "--output",
+                str(tmp_path / "out.npz"),
+                "--boundary-poses",
+                str(boundary),
+            ]
+        )
+    assert error.value.code == 2
+    assert "--boundary-poses" in capsys.readouterr().err

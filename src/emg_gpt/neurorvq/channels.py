@@ -25,6 +25,3 @@ GLOBAL_EMG_CHANNELS = np.asarray(
     ],
     dtype="S4",
 )
-
-# Compatibility alias used by the original NeuroRVQ inference helper.
-ch_names_global = GLOBAL_EMG_CHANNELS

@@ -10,10 +10,9 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from emg_pose.model import EMGPoseModel, PoseModelConfig
-
-from .artifacts import resource_json, verify_file
+from .artifacts import resource_json, sha256, verify_file
 from .model import EMGFrameGPT, EMGGPTConfig
+from .pose import EMGPoseModel, PoseModelConfig
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _POSE_TASKS = {"regression_lstm": "regression", "tracking_lstm": "tracking"}
@@ -55,14 +54,6 @@ def validate_pose_evaluation_contract(
     return (task, normalized)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _verify_bundle(root: Path, required: tuple[str, ...], *, kind: str) -> dict:
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -83,7 +74,7 @@ def _verify_bundle(root: Path, required: tuple[str, ...], *, kind: str) -> dict:
             raise FileNotFoundError(f"Bundle is missing verified output {name!r}")
         if path.stat().st_size != int(record.get("bytes", -1)):
             raise ValueError(f"Bundle byte-size mismatch for {name}")
-        if _sha256(path) != record.get("sha256"):
+        if sha256(path) != record.get("sha256"):
             raise ValueError(f"Bundle SHA-256 mismatch for {name}")
     return manifest
 
@@ -151,9 +142,9 @@ def _strict_load(module: nn.Module, tensors: dict[str, torch.Tensor], *, name: s
 
 
 def load_pose_model_bundle(
-    directory: Path | str, *, device: str | torch.device = "cpu"
+    directory: Path | str, *, device: str | torch.device = "cpu", require_pinned: bool = False
 ) -> EMGPoseModel:
-    """Load a complete adapted model; initializer files are not runtime dependencies."""
+    """Check bundle integrity; optionally require identity against the release catalog."""
     root = Path(directory)
     manifest = _verify_bundle(
         root, ("config.json", "model.safetensors", "codebooks.safetensors"), kind="pose-model"
@@ -162,10 +153,14 @@ def load_pose_model_bundle(
     if document.get("schema_version") != 1 or document.get("model_type") != "emg_gpt_pose_model":
         raise ValueError("Not a complete EMG-GPT pose-model bundle")
     source_sha256 = manifest.get("source", {}).get("sha256")
+    pinned = False
     for record in resource_json("artifacts.json")["pose_models"].values():
         if record["source_checkpoint_sha256"] == source_sha256 and record["files"]:
             for name, identity in record["files"].items():
                 verify_file(root / name, identity)
+            pinned = True
+    if require_pinned and not pinned:
+        raise ValueError("Model is not a pinned EMG-GPT release bundle")
     if document.get("source_checkpoint_sha256") != source_sha256:
         raise ValueError("Pose config and manifest identify different source checkpoints")
     source_gpt_sha256 = document.get("source_gpt_checkpoint_sha256")
@@ -228,4 +223,5 @@ def load_pose_model_bundle(
             raise ValueError("Codebook dtype does not match the pose backbone")
         backbone.set_codebooks(codebooks)
     model._bundle_source_sha256 = source_sha256
+    model._bundle_pinned = pinned
     return model.to(device).eval().requires_grad_(False)

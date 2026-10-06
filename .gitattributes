@@ -5,12 +5,4 @@
 *.json text
 *.md text
 *.toml text
-*.sh text eol=lf
-*.sbatch text eol=lf
 *.png binary
-*.jpg binary
-*.jpeg binary
-*.mp4 binary
-*.pt binary
-*.ckpt binary
-*.safetensors binary

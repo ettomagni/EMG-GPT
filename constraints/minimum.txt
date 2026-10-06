@@ -1,0 +1,14 @@
+# Minimum direct runtime versions, tested together on Python 3.11 CPU.
+# Development tools use cpu-tested.txt versions; they are not runtime dependencies.
+einops==0.7.0
+h5py==3.10.0
+huggingface-hub==1.0.0
+numpy==1.26.0
+safetensors==0.4.5
+scipy==1.11.1
+torch==2.3.0
+build==1.6.1
+cffconvert==2.0.0
+pytest==9.1.1
+ruff==0.16.10
+setuptools==84.0.0

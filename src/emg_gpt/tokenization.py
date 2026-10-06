@@ -8,12 +8,11 @@ import numpy as np
 import torch
 from scipy import signal
 
-from NeuroRVQ_EMG.channels import GLOBAL_EMG_CHANNELS
-from NeuroRVQ_EMG.NeuroRVQ import NeuroRVQTokenizer
-from NeuroRVQ_EMG.NeuroRVQ_modules import get_encoder_decoder_params
-
 from .artifacts import resource_json, verify_file
-from .hub import _strict_load
+from .bundle import _strict_load
+from .neurorvq.channels import GLOBAL_EMG_CHANNELS
+from .neurorvq.NeuroRVQ import NeuroRVQTokenizer
+from .neurorvq.NeuroRVQ_modules import get_encoder_decoder_params
 
 RAW_CHANNELS = tuple(f"c{i}" for i in range(1, 17))
 TOKEN_CHANNELS = tuple(c.decode() for c in GLOBAL_EMG_CHANNELS)
@@ -77,8 +76,13 @@ def tokenize_frames(
         stop = min(start + batch_size, n_frames)
         patches = np.stack([emg[:, i * 40 : i * 40 + 200] for i in range(start, stop)])
         x = torch.from_numpy(patches).to(device=device, dtype=torch.float32).unsqueeze(2)
-        # Independent patches always use the last temporal embedding (15), not their recording index.
-        temporal = torch.full((len(x), 16), 15, device=device, dtype=torch.long)
+        # Match training: the last learned position is 255, independent of storage-block size.
+        temporal = torch.full(
+            (len(x), 16),
+            tokenizer.encoder.time_embed.shape[0] - 1,
+            device=device,
+            dtype=torch.long,
+        )
         spatial = torch.arange(16, device=device).expand(len(x), -1)
         _, indices, _, _ = tokenizer.encode(x, temporal, spatial)
         branches = [q[:4].reshape(4, len(x), 16, 1) for q in indices]

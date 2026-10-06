@@ -10,8 +10,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .codebooks import dequantize_tokens
-
 HeadMode = Literal["codebook_depth_ar"]
 PoolMode = Literal["cls"]
 ScaleWeighting = Literal["uniform", "inverse"]
@@ -19,6 +17,20 @@ FrameInputMode = Literal["rvq_sum"]
 RVQInputNormalization = Literal["layernorm"]
 LatentLossMode = Literal["mse", "smooth_l1", "smooth_l1_cosine"]
 TemporalBackbone = Literal["frame_gpt"]
+
+
+def dequantize_tokens(codes: torch.Tensor, codebooks: torch.Tensor) -> torch.Tensor:
+    """Sum the K frozen RVQ vectors for each channel/branch."""
+    n_branches, n_scales, _, code_dim = codebooks.shape
+    if codes.shape[-2] != n_branches or codes.shape[-1] != n_scales:
+        raise ValueError(
+            f"codes branch/scale ({codes.shape[-2]},{codes.shape[-1]}) != codebooks ({n_branches},{n_scales})"
+        )
+    out = torch.zeros((*codes.shape[:-1], code_dim), dtype=codebooks.dtype, device=codes.device)
+    for branch in range(n_branches):
+        for scale in range(n_scales):
+            out[..., branch, :] += F.embedding(codes[..., branch, scale], codebooks[branch, scale])
+    return out
 
 
 @dataclass(frozen=True)

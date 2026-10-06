@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from emg_gpt.model import EMGFrameGPT
+from .model import EMGFrameGPT
 
 PoseHeadMode = Literal["regression_lstm", "tracking_lstm"]
 BackboneMode = Literal["frozen", "top", "full"]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emg-gpt"
-version = "0.1.0"
+version = "0.1.1"
 description = "Offline hand-pose inference from raw EMG with pretrained EMG-GPT"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -14,7 +14,7 @@ dependencies = [
   "einops>=0.7",
   "numpy>=1.26",
   "safetensors>=0.4.5",
-  "scipy>=1.11",
+  "scipy>=1.11.1",
   "torch>=2.3",
 ]
 
@@ -24,7 +24,7 @@ Paper = "https://arxiv.org/abs/2610.05235"
 
 [project.optional-dependencies]
 data = ["h5py>=3.10"]
-download = ["huggingface-hub>=0.27"]
+download = ["huggingface-hub>=1.0"]
 dev = ["build>=1.2", "cffconvert>=2.0", "pytest>=8.2", "ruff>=0.9"]
 
 [project.scripts]
@@ -36,7 +36,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["emg_gpt*", "NeuroRVQ_EMG*", "emg_pose*"]
+include = ["emg_gpt*"]
 
 [tool.setuptools.package-data]
 emg_gpt = ["resources/*.json"]

@@ -9,7 +9,7 @@ from safetensors.torch import save_file
 
 from emg_gpt.artifacts import sha256
 from emg_gpt.model import EMGFrameGPT, EMGGPTConfig
-from emg_pose.model import EMGPoseModel, PoseModelConfig
+from emg_gpt.pose import EMGPoseModel, PoseModelConfig
 
 
 def update_record(root, name, tensors=None):

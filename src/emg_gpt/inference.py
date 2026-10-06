@@ -12,8 +12,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from . import __version__
 from .artifacts import resource_json, sha256
-from .hub import load_pose_model_bundle
+from .bundle import load_pose_model_bundle
 from .tokenization import RAW_CHANNELS, load_tokenizer, preprocess_emg, tokenize_frames
 
 # Names/index order from the pinned emg2pose joint convention; no kinematics dependency.
@@ -131,6 +132,7 @@ class PosePrediction:
 
 
 def _validate_frontend(model, task: str, contract: dict) -> None:
+    """Restrict raw input to the canonical frontend, beyond generic bundle validation."""
     expected = {
         "n_channels": 16,
         "n_branches": 4,
@@ -187,7 +189,7 @@ class PosePredictor:
             raise ValueError("token_batch_size must be a positive integer")
         self.device = torch.device(device)
         self.token_batch_size = token_batch_size
-        self.model = load_pose_model_bundle(model_dir, device=self.device)
+        self.model = load_pose_model_bundle(model_dir, device=self.device, require_pinned=True)
         document = json.loads((Path(model_dir) / "config.json").read_text())
         self.task = document["task"]
         _validate_frontend(self.model, self.task, document["evaluation_contract"])
@@ -203,6 +205,8 @@ class PosePredictor:
             "pose_source_checkpoint_sha256": document["source_checkpoint_sha256"],
             "pose_bundle_manifest_sha256": sha256(Path(model_dir) / "manifest.json"),
             "tokenizer_sha256": resource_json("artifacts.json")["tokenizer"]["sha256"],
+            "pose_bundle_pinned": self.model._bundle_pinned,
+            "tokenizer_temporal_index": self.tokenizer.encoder.time_embed.shape[0] - 1,
         }
 
     def plan(self, n_samples: int, *, max_windows: int | None = None) -> WindowPlan:
@@ -245,6 +249,15 @@ class PosePredictor:
                 or not np.isfinite(initial).all()
             ):
                 raise ValueError("initial_poses_rad must be finite [windows,20] radians")
+            if np.any(np.all(np.isclose(initial, 0.0), axis=1)):
+                raise ValueError(
+                    "Boundary pose is all zero: emg2pose marks this as invalid IK; supply valid measured poses"
+                )
+            # A generous unit sanity check, not anatomical limits or unit detection.
+            if np.any((initial < -2 * np.pi) | (initial > 2 * np.pi)):
+                raise ValueError(
+                    "Boundary angle exceeds one full turn (2*pi radians); check units and pose validity"
+                )
             if (
                 times.dtype.kind not in "fiu"
                 or times.shape != (len(initial),)
@@ -292,6 +305,7 @@ class PosePredictor:
         coverage[plan.source_sample_indices.reshape(-1) // 40] = True
         metadata = {
             "schema_version": 1,
+            "emg_gpt_version": __version__,
             "task": self.task,
             "pose_units": "radians",
             "input_units": "emg2pose_native_scale",
@@ -315,6 +329,7 @@ class PosePredictor:
             else [],
             "device": str(self.device),
             "dtype": "float32",
+            "token_batch_size": self.token_batch_size,
             **self.identity,
         }
         return PosePrediction(

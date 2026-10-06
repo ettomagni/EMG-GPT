@@ -70,16 +70,16 @@ The corresponding evaluator is outside this inference-only package.
 | Artifact | Selected checkpoint | Availability |
 | --- | --- | --- |
 | NeuroRVQ tokenizer | Upstream EMG v1 | Pinned, verified download |
-| Regression | GPT initialization 280k; downstream step 2,000 | Verified export; Hugging Face access required |
-| Tracking | GPT initialization 400k; downstream step 5,000 | Verified export; Hugging Face access required |
+| Regression | GPT 280k → pose warm-start → full fine-tuning, step 2,000 | Verified export; Hugging Face access required |
+| Tracking | GPT 400k → pose warm-start → full fine-tuning, step 5,000 | Verified export; Hugging Face access required |
 
 Each pose directory must contain `config.json`, `model.safetensors`,
 `codebooks.safetensors` and `manifest.json`. These bundles contain the **adapted
 backbone and pose head together**. Original GPT initializers, warm-start weights
 and training data are not needed. Recorded identities are in
 [src/emg_gpt/resources/artifacts.json](src/emg_gpt/resources/artifacts.json).
-Loading checks hashes, tensor keys, shapes, dtypes, protocol and tokenizer/codebook
-compatibility. There is no fallback model.
+The raw-EMG API requires these pinned bundles and checks hashes, tensor keys,
+shapes, dtypes, protocol and tokenizer/codebook compatibility.
 
 ## Install
 
@@ -92,6 +92,11 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install . -c constraints/cpu-tested.txt
 ```
+
+Use package version **0.1.1 or later**. Version 0.1.0 used the wrong temporal
+embedding in the tokenizer; the corrected code uses index 255. Existing weights
+remain valid. Run examples from this release directory or a neutral directory;
+the research checkout contains a different package also named `emg_gpt`.
 
 Local inference needs PyTorch, NumPy, SciPy, einops and safetensors. Install
 `'.[data]'` for official emg2pose HDF5 input or `'.[download]'` for the tokenizer
@@ -188,10 +193,12 @@ python scripts/check_release.py --profile review
 python -m build
 ```
 
-The 46 focused tests pass on CPU with Python 3.11 and 3.12. Separate real-checkpoint
-checks for Regression and Tracking each match the original preprocessing, 40,960
-token IDs and 250 predicted poses exactly on a fixed validation window.
-These checks establish implementation compatibility, not new benchmark scores.
+Tests cover token positions/layout, input validation, bundle identity, CLI and
+installed-package isolation. CI checks the pinned CPU environment on Python 3.11
+and 3.12, plus minimum runtime dependencies on Python 3.11.
+Real-checkpoint parity is checked separately against the research tokenizer,
+dataset and original pose checkpoints. These checks are implementation checks,
+not a rerun of the paper's benchmark; see the [inference contract](docs/inference.md).
 
 ## Citation
 

@@ -78,10 +78,15 @@ def main(argv: list[str] | None = None) -> None:
         raw, rate, channels = read_emg(args.input)
         boundary = {}
         if args.boundary_poses is not None:
-            with np.load(args.boundary_poses, allow_pickle=False) as data:
-                boundary = {
-                    key: data[key] for key in ("initial_poses_rad", "boundary_timestamps_s")
-                }
+            try:
+                with np.load(args.boundary_poses, allow_pickle=False) as data:
+                    required = ("initial_poses_rad", "boundary_timestamps_s")
+                    missing = set(required) - set(data.files)
+                    if missing:
+                        raise ValueError(f"NPZ lacks: {', '.join(sorted(missing))}")
+                    boundary = {key: data[key] for key in required}
+            except (OSError, ValueError, KeyError) as error:
+                raise ValueError(f"--boundary-poses {args.boundary_poses}: {error}") from error
         predictor = PosePredictor(
             args.model_dir,
             args.tokenizer,

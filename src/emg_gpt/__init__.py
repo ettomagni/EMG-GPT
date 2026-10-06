@@ -1,6 +1,6 @@
 """Offline hand-pose inference with pretrained EMG-GPT models."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = ["PosePredictor", "PosePrediction", "plan_windows"]
 
