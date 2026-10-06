@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emg-gpt"
+version = "0.1.0"
+description = "Offline hand-pose inference from raw EMG with pretrained EMG-GPT"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = "CC-BY-NC-4.0"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "licenses/*.txt"]
+dependencies = [
+  "einops>=0.7",
+  "numpy>=1.26",
+  "safetensors>=0.4.5",
+  "scipy>=1.11",
+  "torch>=2.3",
+]
+
+[project.urls]
+Repository = "https://github.com/ettomagni/EMG-GPT"
+Paper = "https://arxiv.org/abs/2610.05235"
+
+[project.optional-dependencies]
+data = ["h5py>=3.10"]
+download = ["huggingface-hub>=0.27"]
+dev = ["build>=1.2", "cffconvert>=2.0", "pytest>=8.2", "ruff>=0.9"]
+
+[project.scripts]
+emg-gpt-predict = "emg_gpt.cli:main"
+emg-gpt-download-tokenizer = "emg_gpt.cli:download_tokenizer"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["emg_gpt*", "NeuroRVQ_EMG*", "emg_pose*"]
+
+[tool.setuptools.package-data]
+emg_gpt = ["resources/*.json"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

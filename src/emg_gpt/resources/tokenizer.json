@@ -1,0 +1,21 @@
+{
+  "patch_size": 200,
+  "n_patches": 256,
+  "n_code": 8192,
+  "code_dim": 128,
+  "embed_dim": 200,
+  "in_chans_encoder": 1,
+  "out_chans_encoder": 8,
+  "depth_encoder": 12,
+  "depth_decoder": 3,
+  "decoder_out_dim": 200,
+  "num_heads_tokenizer": 10,
+  "mlp_ratio_tokenizer": 4,
+  "qkv_bias_tokenizer": true,
+  "drop_rate_tokenizer": 0.0,
+  "attn_drop_rate_tokenizer": 0.0,
+  "drop_path_rate_tokenizer": 0.0,
+  "init_values_tokenizer": 0.0,
+  "init_scale_tokenizer": 0.001,
+  "n_global_electrodes": 16
+}

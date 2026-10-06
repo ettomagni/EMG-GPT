@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use EMG-GPT, please cite the paper in preferred-citation."
+type: software
+title: EMG-GPT
+repository-code: "https://github.com/ettomagni/EMG-GPT"
+authors:
+  - family-names: Magni
+    given-names: Ettore
+  - family-names: Potamias
+    given-names: Rolandos Alexandros
+  - family-names: Zafeiriou
+    given-names: Stefanos
+  - family-names: Barmpas
+    given-names: Konstantinos
+preferred-citation:
+  type: article
+  title: "EMG-GPT: Predictive Pretraining on Residual-Quantized EMG Tokens for Hand Pose Estimation"
+  authors:
+    - family-names: Magni
+      given-names: Ettore
+    - family-names: Potamias
+      given-names: Rolandos Alexandros
+    - family-names: Zafeiriou
+      given-names: Stefanos
+    - family-names: Barmpas
+      given-names: Konstantinos
+  journal: arXiv
+  year: 2026
+  month: 10
+  url: "https://arxiv.org/abs/2610.05235"

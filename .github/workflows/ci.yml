@@ -1,0 +1,53 @@
+name: inference checks
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      OMP_NUM_THREADS: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install CPU runtime and test tools
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install '.[dev,data]'
+      - run: ruff check src scripts tests
+      - run: python scripts/check_release.py --profile review
+      - run: python -m pytest
+      - name: Publication metadata gate
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python scripts/check_release.py --profile publication
+      - name: Build wheel and source distribution
+        run: python -m build
+      - name: Install each distribution and test outside the checkout
+        shell: bash
+        run: |
+          for package in "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/dist/*.tar.gz; do
+            python -m pip install --force-reinstall --no-deps "$package"
+            (
+              cd "$RUNNER_TEMP"
+              emg-gpt-predict --help
+              emg-gpt-download-tokenizer --help
+              python -c "from emg_gpt import PosePredictor, plan_windows; from emg_gpt.artifacts import resource_json; assert resource_json('tokenizer.json')['n_code'] == 8192; assert plan_windows(14000, 'regression').timestamps_s[0,0] == 1.2"
+              python -m pytest "$GITHUB_WORKSPACE/tests"
+            )
+          done
