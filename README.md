@@ -164,6 +164,10 @@ Machine-readable metadata: [CITATION.cff](CITATION.cff).
 
 ## License
 
-Code and EMG-GPT model weights: [CC BY-NC 4.0](LICENSE). The tokenizer is adapted from
-[NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ); retained third-party
+EMG-GPT model weights (`model.safetensors`):
+[CC BY 4.0](https://huggingface.co/ettoremagni/EMG-GPT/blob/main/LICENSE).
+Inference code: [CC BY-NC 4.0](LICENSE).
+
+The [NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ) tokenizer and
+`codebooks.safetensors` retain their upstream CC BY-NC 4.0 terms. Retained code
 components and their licenses are listed in [third-party notices](THIRD_PARTY_NOTICES.md).
