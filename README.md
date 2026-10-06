@@ -4,7 +4,7 @@
 
 **Predictive Pretraining on Residual-Quantized EMG Tokens for Hand Pose Estimation**
 
-[Paper](https://arxiv.org/abs/2610.05235) · [Citation](#citation)
+[Paper](https://arxiv.org/abs/2610.05235) · [Weights (private)](https://huggingface.co/ettoremagni/EMG-GPT) · [Citation](#citation)
 
 Ettore Magni · Rolandos Alexandros Potamias · Stefanos Zafeiriou · Konstantinos Barmpas
 
@@ -65,13 +65,13 @@ The corresponding evaluator is outside this inference-only package.
 
 ## Availability
 
-**The code runs with local artifacts. Public pose-weight downloads are pending.**
+**Complete pose bundles are hosted privately on Hugging Face. Public downloads are pending.**
 
 | Artifact | Selected checkpoint | Availability |
 | --- | --- | --- |
 | NeuroRVQ tokenizer | Upstream EMG v1 | Pinned, verified download |
-| Regression | GPT initialization 280k; downstream step 2,000 | Complete local export verified; no public URL yet |
-| Tracking | GPT initialization 400k; downstream step 5,000 | Complete local export verified; no public URL yet |
+| Regression | GPT initialization 280k; downstream step 2,000 | Verified export; Hugging Face access required |
+| Tracking | GPT initialization 400k; downstream step 5,000 | Verified export; Hugging Face access required |
 
 Each pose directory must contain `config.json`, `model.safetensors`,
 `codebooks.safetensors` and `manifest.json`. These bundles contain the **adapted
@@ -100,18 +100,24 @@ for this refactor; MPS is not supported. No external hand model or meshes are ne
 
 ## Regression quick start
 
-Obtain a complete Regression bundle locally and place its four files in
-`weights/regression/`. This step requires access to the exported weights until a
-public download is added. Then:
+With access to the [private model repository](https://huggingface.co/ettoremagni/EMG-GPT),
+download the pinned Regression bundle into `weights/regression/`:
 
 ```bash
 python -m pip install '.[download]' -c constraints/cpu-tested.txt
+hf auth login
+hf download ettoremagni/EMG-GPT \
+  --revision 5b1b58089a780965dba0e35dfb97bd464d8b3abd \
+  --include "regression/*" --local-dir weights
 emg-gpt-download-tokenizer --output weights/NeuroRVQ_EMG_tokenizer_v1.pt
 emg-gpt-predict \
   --model-dir weights/regression \
   --tokenizer weights/NeuroRVQ_EMG_tokenizer_v1.pt \
   --input recording.npz --output prediction.npz --device cpu
 ```
+
+For Tracking, download `tracking/*` instead and supply the explicit boundary
+poses described below. Both bundles use the same pinned Hugging Face revision.
 
 Input NPZ files must contain `emg` (finite real array `[samples,16]`),
 `sampling_rate_hz` (scalar `2000`) and `channel_names` (Unicode strings `c1` through

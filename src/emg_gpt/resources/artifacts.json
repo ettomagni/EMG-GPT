@@ -41,6 +41,12 @@
           "sha256": "5241b81ada752f491e429c4afd2f420e804da66c66f2480764e1a56babd2138d",
           "bytes": 67108952
         }
+      },
+      "private_source": {
+        "provider": "huggingface",
+        "repo_id": "ettoremagni/EMG-GPT",
+        "revision": "5b1b58089a780965dba0e35dfb97bd464d8b3abd",
+        "subfolder": "regression"
       }
     },
     "tracking": {
@@ -67,6 +73,12 @@
           "sha256": "5241b81ada752f491e429c4afd2f420e804da66c66f2480764e1a56babd2138d",
           "bytes": 67108952
         }
+      },
+      "private_source": {
+        "provider": "huggingface",
+        "repo_id": "ettoremagni/EMG-GPT",
+        "revision": "5b1b58089a780965dba0e35dfb97bd464d8b3abd",
+        "subfolder": "tracking"
       }
     }
   },
