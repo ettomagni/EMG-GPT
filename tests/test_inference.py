@@ -101,6 +101,8 @@ def test_raw_input_errors(fake_predictor, fault):
         "missing",
         "shape",
         "nan",
+        "infinity",
+        "nan_and_infinity",
         "timestamp",
         "zeros",
         "degrees",
@@ -117,6 +119,11 @@ def test_tracking_requires_aligned_explicit_boundaries(fake_predictor, fault):
             options["initial_poses_rad"] = np.ones(20)
         elif fault == "nan":
             options["initial_poses_rad"][0, 0] = np.nan
+        elif fault == "infinity":
+            options["initial_poses_rad"][:] = np.inf
+        elif fault == "nan_and_infinity":
+            options["initial_poses_rad"][:] = np.nan
+            options["initial_poses_rad"][0, 0] = np.inf
         elif fault == "timestamp":
             options["boundary_timestamps_s"][0] = 1.20
         elif fault == "zeros":
@@ -143,6 +150,139 @@ def test_tracking_allows_zero_joints_in_a_valid_pose(fake_predictor):
         boundary_timestamps_s=np.array([1.24]),
     )
     assert np.array_equal(prediction.joint_angles_rad[0, 0], initial[0])
+
+
+@pytest.mark.parametrize("missing", [(0,), (1,), (2,), (0, 1, 2)])
+def test_tracking_skips_missing_boundaries_without_shifting_windows(
+    fake_predictor, monkeypatch, tmp_path, missing
+):
+    model = fake_predictor("tracking")
+    raw = np.zeros((40000, 16), dtype=np.float32)
+    plan = model.plan(len(raw))
+    initial = np.repeat(np.array([0.1, 0.2, 0.3])[:, None], 20, axis=1)
+    expected = model.predict(
+        raw,
+        sampling_rate_hz=2000,
+        channel_names=RAW_CHANNELS,
+        initial_poses_rad=initial,
+        boundary_timestamps_s=plan.boundary_timestamps_s,
+    )
+    observed = []
+    token_counts = []
+    decoder = model.model
+    tokenize = inference.tokenize_frames
+
+    class RecordingDecoder:
+        def eval(self):
+            return self
+
+        def __call__(self, tokens, initial_pose=None):
+            assert torch.isfinite(initial_pose).all()
+            observed.append(initial_pose.cpu().numpy().copy())
+            return decoder(tokens, initial_pose=initial_pose)
+
+    def capture(tokenizer, processed, count, **kwargs):
+        assert processed.shape == (16, len(raw) // 2)
+        token_counts.append(count)
+        return tokenize(tokenizer, processed, count, **kwargs)
+
+    model.model = RecordingDecoder()
+    monkeypatch.setattr(inference, "tokenize_frames", capture)
+    initial[list(missing)] = np.nan
+    pred = model.predict(
+        raw,
+        sampling_rate_hz=2000,
+        channel_names=RAW_CHANNELS,
+        initial_poses_rad=initial,
+        boundary_timestamps_s=plan.boundary_timestamps_s,
+    )
+    valid_windows = np.isfinite(initial).all(axis=1)
+    assert len(observed) == int(valid_windows.sum())
+    assert token_counts == [((int(plan.token_starts[-1]) + 150 + 15) // 16) * 16]
+    assert np.array_equal(
+        pred.joint_angles_rad[valid_windows], expected.joint_angles_rad[valid_windows]
+    )
+    assert np.isnan(pred.joint_angles_rad[~valid_windows]).all()
+    assert np.array_equal(pred.source_sample_indices, plan.source_sample_indices)
+    assert np.array_equal(pred.window_token_starts, plan.token_starts)
+    assert pred.coverage_mask.sum() == valid_windows.sum() * 250
+    assert not pred.coverage_mask[plan.source_sample_indices[~valid_windows] // 40].any()
+    assert pred.metadata["schema_version"] == 2
+    assert pred.metadata["planned_windows"] == 3
+    assert pred.metadata["predicted_windows"] == int(valid_windows.sum())
+    assert pred.metadata["skipped_windows"] == len(missing)
+    assert pred.metadata["skipped_window_indices"] == list(missing)
+    assert pred.metadata["skipped_window_reason"] == "missing_boundary_pose"
+    destination = tmp_path / "skipped.npz"
+    pred.save(destination)
+    with np.load(destination, allow_pickle=False) as saved:
+        assert np.array_equal(saved["valid"], np.repeat(valid_windows[:, None], 250, axis=1))
+        assert np.array_equal(saved["coverage_mask"], pred.coverage_mask)
+
+
+def test_missing_boundary_still_requires_aligned_timestamp(fake_predictor):
+    with pytest.raises(ValueError, match="timestamps"):
+        fake_predictor("tracking").predict(
+            np.zeros((14000, 16)),
+            sampling_rate_hz=2000,
+            channel_names=RAW_CHANNELS,
+            initial_poses_rad=np.full((1, 20), np.nan),
+            boundary_timestamps_s=np.array([1.2]),
+        )
+
+
+def test_max_windows_counts_skipped_slots(fake_predictor):
+    model = fake_predictor("tracking")
+    raw = np.zeros((40000, 16))
+    pred = model.predict(
+        raw,
+        sampling_rate_hz=2000,
+        channel_names=RAW_CHANNELS,
+        max_windows=1,
+        initial_poses_rad=np.full((1, 20), np.nan),
+        boundary_timestamps_s=model.plan(len(raw), max_windows=1).boundary_timestamps_s,
+    )
+    assert pred.joint_angles_rad.shape == (1, 250, 20)
+    assert pred.metadata["total_available_windows"] == 3
+    assert pred.metadata["predicted_windows"] == 0 and not pred.coverage_mask.any()
+
+
+def test_cli_tracking_preserves_skipped_window(fake_predictor, monkeypatch, tmp_path, capsys):
+    from emg_gpt import cli
+
+    model = fake_predictor("tracking")
+    monkeypatch.setattr(cli, "PosePredictor", lambda *args, **kwargs: model)
+    raw = np.zeros((40000, 16), dtype=np.float32)
+    initial = np.ones((3, 20), dtype=np.float32)
+    initial[1] = np.nan
+    np.savez(
+        tmp_path / "raw.npz", emg=raw, sampling_rate_hz=2000, channel_names=np.asarray(RAW_CHANNELS)
+    )
+    np.savez(
+        tmp_path / "boundary.npz",
+        initial_poses_rad=initial,
+        boundary_timestamps_s=model.plan(len(raw)).boundary_timestamps_s,
+    )
+    cli.main(
+        [
+            "--model-dir",
+            str(tmp_path),
+            "--tokenizer",
+            "unused.pt",
+            "--input",
+            str(tmp_path / "raw.npz"),
+            "--output",
+            str(tmp_path / "prediction.npz"),
+            "--boundary-poses",
+            str(tmp_path / "boundary.npz"),
+        ]
+    )
+    with np.load(tmp_path / "prediction.npz", allow_pickle=False) as saved:
+        assert saved["joint_angles_rad"].shape == (3, 250, 20)
+        assert np.isnan(saved["joint_angles_rad"][1]).all()
+        assert saved["valid"][[0, 2]].all() and not saved["valid"][1].any()
+    output = capsys.readouterr().out
+    assert "2 predicted tracking windows" in output and "1 skipped" in output
 
 
 @pytest.mark.parametrize("task", ["regression", "tracking"])

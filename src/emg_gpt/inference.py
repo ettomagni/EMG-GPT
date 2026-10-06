@@ -223,7 +223,7 @@ class PosePredictor:
         boundary_timestamps_s: np.ndarray | None = None,
         max_windows: int | None = None,
     ) -> PosePrediction:
-        """Predict independent windows; Tracking takes one measured boundary pose per window."""
+        """Predict independent windows; all-NaN Tracking boundaries explicitly skip a window."""
         if sampling_rate_hz != 2000 or isinstance(sampling_rate_hz, bool):
             raise ValueError("Raw EMG must be sampled at 2000 Hz; do not pre-resample it")
         raw = np.asarray(raw_emg)
@@ -236,6 +236,7 @@ class PosePredictor:
             raise ValueError("channel_names must contain c1 through c16 exactly once")
         plan = self.plan(len(raw), max_windows=max_windows)
         initial = None
+        skipped = np.zeros(len(plan.token_starts), dtype=bool)
         if self.task == "tracking":
             if initial_poses_rad is None or boundary_timestamps_s is None:
                 raise ValueError(
@@ -243,15 +244,17 @@ class PosePredictor:
                 )
             initial = np.asarray(initial_poses_rad)
             times = np.asarray(boundary_timestamps_s)
-            if (
-                initial.dtype.kind not in "fiu"
-                or initial.shape != (len(plan.token_starts), 20)
-                or not np.isfinite(initial).all()
-            ):
-                raise ValueError("initial_poses_rad must be finite [windows,20] radians")
+            if initial.dtype.kind not in "fiu" or initial.shape != (len(plan.token_starts), 20):
+                raise ValueError("initial_poses_rad must be a real numeric [windows,20] array")
+            skipped = np.isnan(initial).all(axis=1)
+            if not np.isfinite(initial[~skipped]).all():
+                raise ValueError(
+                    "Boundary rows must be finite radians or entirely NaN to skip a window"
+                )
             if np.any(np.all(np.isclose(initial, 0.0), axis=1)):
                 raise ValueError(
-                    "Boundary pose is all zero: emg2pose marks this as invalid IK; supply valid measured poses"
+                    "Boundary pose is all zero: emg2pose marks this as invalid IK; "
+                    "supply a valid pose or mark the entire row NaN to skip that window"
                 )
             # A generous unit sanity check, not anatomical limits or unit detection.
             if np.any((initial < -2 * np.pi) | (initial > 2 * np.pi)):
@@ -271,7 +274,7 @@ class PosePredictor:
             raise ValueError("Regression does not accept boundary poses")
         raw = raw[:, [names.index(c) for c in RAW_CHANNELS]]
         processed = preprocess_emg(raw)
-        # Preserve whole-record filtering even when only a prefix of windows is requested.
+        # Keep filtering and token batches unchanged when limiting or skipping decoder windows.
         needed = int(plan.token_starts[-1]) + 150
         frame_count = (needed + 15) // 16 * 16
         tokens = tokenize_frames(
@@ -282,8 +285,10 @@ class PosePredictor:
             device=self.device,
         )
         self.model.eval()
-        predictions = []
+        angles = np.full((len(plan.token_starts), 250, 20), np.nan, dtype=np.float32)
         for index, start in enumerate(plan.token_starts):
+            if skipped[index]:
+                continue
             window = (
                 torch.from_numpy(tokens[start : start + 150].astype(np.int64))
                 .unsqueeze(0)
@@ -299,12 +304,11 @@ class PosePredictor:
             pose = self.model(window, initial_pose=boundary).cpu().numpy()[0]
             if pose.shape != (250, 20) or not np.isfinite(pose).all():
                 raise ValueError("Model produced invalid pose predictions")
-            predictions.append(pose)
-        angles = np.stack(predictions)
+            angles[index] = pose
         coverage = np.zeros((len(raw) + 39) // 40, dtype=bool)
-        coverage[plan.source_sample_indices.reshape(-1) // 40] = True
+        coverage[plan.source_sample_indices[~skipped].reshape(-1) // 40] = True
         metadata = {
-            "schema_version": 1,
+            "schema_version": 2,
             "emg_gpt_version": __version__,
             "task": self.task,
             "pose_units": "radians",
@@ -321,7 +325,11 @@ class PosePredictor:
             "pose_offset_token_frames": int(self.task == "tracking"),
             "stored_token_frames": plan.stored_token_frames,
             "total_available_windows": plan.total_windows,
-            "predicted_windows": len(angles),
+            "planned_windows": len(angles),
+            "predicted_windows": int((~skipped).sum()),
+            "skipped_windows": int(skipped.sum()),
+            "skipped_window_indices": np.flatnonzero(skipped).tolist(),
+            "skipped_window_reason": "missing_boundary_pose" if skipped.any() else None,
             "window_state": "reset_independently",
             "boundary_pose_source": "explicit_caller_input" if initial is not None else "none",
             "boundary_timestamps_s": plan.boundary_timestamps_s.tolist()

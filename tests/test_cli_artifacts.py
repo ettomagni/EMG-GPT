@@ -92,7 +92,7 @@ def test_cli_delegates_to_api_and_preserves_output(tmp_path, monkeypatch):
                 np.arange(2400, 12400, 40)[None],
                 np.zeros(350, dtype=bool),
                 np.array([0]),
-                {"synthetic": True},
+                {"synthetic": True, "predicted_windows": 1, "skipped_windows": 0},
             )
 
     monkeypatch.setattr(cli, "PosePredictor", Predictor)

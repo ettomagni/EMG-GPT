@@ -6,7 +6,7 @@
 
 [Paper](https://arxiv.org/abs/2610.05235) · [Weights](https://huggingface.co/ettoremagni/EMG-GPT) · [Inference guide](docs/inference.md) · [Citation](#citation)
 
-Ettore Magni · Rolandos Alexandros Potamias · Stefanos Zafeiriou · Konstantinos Barmpas
+[Ettore Magni](https://www.linkedin.com/in/ettoremagni) · [Rolandos Alexandros Potamias](https://rolpotamias.github.io/) · [Stefanos Zafeiriou](https://profiles.imperial.ac.uk/s.zafeiriou) · [Konstantinos Barmpas](https://www.barmpas.com/)
 
 </div>
 
@@ -95,7 +95,8 @@ For NVIDIA GPU inference, install a CUDA-enabled PyTorch build using the
 GPU. MPS is unsupported. Add the `data` extra (`pip install '.[data]'`) to read
 official emg2pose HDF5 recordings. No hand model or meshes are needed.
 
-Use **version 0.1.1 or later**, which fixes tokenizer alignment. Existing weights
+Use **version 0.1.2 or later**, with corrected tokenizer alignment and explicit
+skips for missing Tracking boundaries. Existing weights
 remain valid; see [compatibility and verification](docs/inference.md#reproducibility).
 
 ## Regression quick start
@@ -104,8 +105,8 @@ Download the Regression bundle and tokenizer, then predict from raw EMG:
 
 ```bash
 hf download ettoremagni/EMG-GPT \
-  --revision 5b1b58089a780965dba0e35dfb97bd464d8b3abd \
-  --include "regression/*" --local-dir weights
+  --revision 812d159b4e7a4fb1c95da865f4f1e2635fa6522f \
+  --include "regression/*" --include "LICENSE" --local-dir weights
 emg-gpt-download-tokenizer --output weights/NeuroRVQ_EMG_tokenizer_v1.pt
 emg-gpt-predict \
   --model-dir weights/regression \
@@ -113,8 +114,9 @@ emg-gpt-predict \
   --input recording.npz --output prediction.npz --device cpu
 ```
 
-For Tracking, download `tracking/*` from the same revision and supply one measured
-boundary pose per window; see [Tracking input](docs/inference.md#tracking-input).
+For Tracking, replace `regression/*` with `tracking/*` and keep `LICENSE` included.
+Supply one measured boundary pose per window, or an all-NaN row to skip it;
+see [Tracking input](docs/inference.md#tracking-input).
 
 Input NPZ files must contain `emg` (finite real array `[samples,16]`),
 `sampling_rate_hz` (scalar `2000`) and `channel_names` (Unicode strings `c1` through
@@ -165,7 +167,7 @@ Machine-readable metadata: [CITATION.cff](CITATION.cff).
 ## License
 
 EMG-GPT model weights (`model.safetensors`):
-[CC BY 4.0](https://huggingface.co/ettoremagni/EMG-GPT/blob/main/LICENSE).
+[CC BY-NC-SA 4.0](https://huggingface.co/ettoremagni/EMG-GPT/blob/main/LICENSE).
 Inference code: [CC BY-NC 4.0](LICENSE).
 
 The [NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ) tokenizer and

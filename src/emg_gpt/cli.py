@@ -62,12 +62,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--boundary-poses",
         type=Path,
-        help="Tracking-only NPZ: initial_poses_rad, boundary_timestamps_s",
+        help="Tracking NPZ: initial_poses_rad, boundary_timestamps_s; all-NaN pose rows skip windows",
     )
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--token-batch-size", type=int, default=16)
     parser.add_argument(
-        "--max-windows", type=int, help="Limit decoded windows; still filter the full recording"
+        "--max-windows",
+        type=int,
+        help="Limit planned windows, including skips; filter the full recording",
     )
     args = parser.parse_args(argv)
     try:
@@ -103,7 +105,10 @@ def main(argv: list[str] | None = None) -> None:
         prediction.save(args.output)
     except (OSError, ValueError, KeyError, RuntimeError) as error:
         parser.exit(2, f"emg-gpt-predict: {error}\n")
-    print(f"Saved {len(prediction.joint_angles_rad)} {predictor.task} windows to {args.output}")
+    print(
+        f"Saved {prediction.metadata['predicted_windows']} predicted {predictor.task} windows "
+        f"to {args.output}; {prediction.metadata['skipped_windows']} skipped"
+    )
 
 
 def download_tokenizer(argv: list[str] | None = None) -> None:

@@ -99,12 +99,16 @@ times = plan.boundary_timestamps_s
 
 Supply `initial_poses_rad` of shape `[len(times),20]` and
 `boundary_timestamps_s=times` to `PosePredictor.predict`. These are caller-provided
-valid measurements in radians; the API checks shape, finiteness and alignment.
-All-zero boundary rows are rejected, matching emg2pose's invalid-IK convention.
+measurements in radians; the API checks shape, finiteness and alignment.
+To skip a window with no valid boundary, set its entire 20-joint row to `NaN`.
+That window retains its timestamps and position in the output, with `NaN` angles,
+`valid=False` and no coverage. Its decoder is not run; other windows are unaffected.
+Partial-NaN rows, infinities and all-zero poses are rejected. For official emg2pose
+poses, convert invalid IK rows to all-NaN explicitly, as shown below.
 Angles exceeding one full turn (`2*pi` radians) are also rejected as a unit sanity
 check. This is not an anatomical validator and cannot detect every degrees/radians
-mix-up. Invalid boundaries fail the request rather than silently dropping windows.
-Use the same `max_windows` for planning and predicting if limiting a run.
+mix-up. Use the same `max_windows` for planning and predicting: the limit counts
+planned windows, including skips, rather than requesting extra valid windows.
 
 For the CLI, prepare the measured poses in the joint order below and save:
 
@@ -112,13 +116,16 @@ For the CLI, prepare the measured poses in the joint order below and save:
 import numpy as np
 from emg_gpt import plan_windows
 
-plan = plan_windows(len(raw_emg), "tracking", max_windows=1)
-# measured_poses_rad: one valid measurement per plan.boundary_timestamps_s.
-np.savez("boundary.npz", initial_poses_rad=measured_poses_rad,
+plan = plan_windows(len(raw_emg), "tracking")
+# measured_poses_rad: one measurement per plan.boundary_timestamps_s.
+initial = np.asarray(measured_poses_rad, dtype=np.float32).copy()
+missing = ~np.isfinite(initial).all(axis=1) | np.isclose(initial, 0).all(axis=1)
+initial[missing] = np.nan
+np.savez("boundary.npz", initial_poses_rad=initial,
          boundary_timestamps_s=plan.boundary_timestamps_s)
 ```
 
-Pass `--model-dir weights/tracking --boundary-poses boundary.npz --max-windows 1`
+Pass `--model-dir weights/tracking --boundary-poses boundary.npz`
 to the same prediction command used for Regression.
 Never label an independently carried prediction as ground-truth initialization.
 
@@ -128,7 +135,7 @@ Load with `numpy.load(path, allow_pickle=False)`:
 
 | Field | Meaning |
 | --- | --- |
-| `joint_angles_rad` | Float32 `[W,250,20]` angles |
+| `joint_angles_rad` | Float32 `[W,250,20]` angles; skipped windows contain NaN |
 | `timestamps_s`, `source_sample_indices` | `[W,250]` recording-relative times and 2-kHz indices |
 | `joint_names` | 20 names, ordered as the last angle dimension |
 | `window_token_starts` | `[W]` context starts at 25 Hz |
@@ -137,6 +144,9 @@ Load with `numpy.load(path, allow_pickle=False)`:
 | `metadata_json` | Scalar JSON: task, units, preprocessing, window policy, code version, device, token batch size/index, pinned-bundle status and artifact hashes |
 
 Uncovered times have no predicted angle. There is no interpolation across gaps.
+Metadata schema 2 records `planned_windows`, `predicted_windows`, `skipped_windows`,
+`skipped_window_indices` (zero-based output rows) and `skipped_window_reason`.
+If every boundary is missing, the result keeps all planned rows with zero coverage.
 Joint order is thumb CMC-FE, CMC-AA, MCP-FE, IP-FE; then index, middle, ring and
 pinky, each MCP-AA, MCP-FE, PIP-FE, DIP-FE. FE denotes flexion/extension and AA
 abduction/adduction, using the pinned emg2pose convention. Output contains joint
@@ -147,8 +157,8 @@ Saved predictions and downloaded tokenizer files default to owner-only access
 
 ## Reproducibility
 
-Use package version **0.1.1 or later**. Version 0.1.0 selected temporal embedding
-15 instead of 255; the correction changes code only, and existing weights remain
+Use package version **0.1.2 or later** for explicit missing-boundary skips.
+Version 0.1.1 fixed the temporal embedding (15 → 255); existing weights remain
 valid. Run examples from this release checkout or a neutral directory to avoid
 shadowing by another package named `emg_gpt`.
 

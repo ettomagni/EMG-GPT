@@ -44,7 +44,7 @@
       "source": {
         "provider": "huggingface",
         "repo_id": "ettoremagni/EMG-GPT",
-        "revision": "5b1b58089a780965dba0e35dfb97bd464d8b3abd",
+        "revision": "812d159b4e7a4fb1c95da865f4f1e2635fa6522f",
         "subfolder": "regression"
       }
     },
@@ -75,7 +75,7 @@
       "source": {
         "provider": "huggingface",
         "repo_id": "ettoremagni/EMG-GPT",
-        "revision": "5b1b58089a780965dba0e35dfb97bd464d8b3abd",
+        "revision": "812d159b4e7a4fb1c95da865f4f1e2635fa6522f",
         "subfolder": "tracking"
       }
     }

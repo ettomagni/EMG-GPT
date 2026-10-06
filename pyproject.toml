@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emg-gpt"
-version = "0.1.1"
+version = "0.1.2"
 description = "Offline hand-pose inference from raw EMG with pretrained EMG-GPT"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
