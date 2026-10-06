@@ -1,12 +1,11 @@
-include .gitignore .gitattributes
 include README.md LICENSE THIRD_PARTY_NOTICES.md CITATION.cff
-recursive-include .github *.yml
 recursive-include constraints *.txt
 recursive-include docs *.md
 recursive-include images *.png
 recursive-include licenses *.txt
 recursive-include scripts *.py
 recursive-include tests *.py
+recursive-include tests/fixtures *.npz *.json
 recursive-include src *.json
 global-exclude *.pyc *.pyo .DS_Store
 prune .venv

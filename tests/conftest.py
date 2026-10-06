@@ -1,6 +1,5 @@
 """Small random tensors test software contracts, never model accuracy."""
 
-import hashlib
 import json
 
 import pytest
@@ -12,19 +11,9 @@ from emg_gpt.model import EMGFrameGPT, EMGGPTConfig
 from emg_gpt.pose import EMGPoseModel, PoseModelConfig
 
 
-def update_record(root, name, tensors=None):
+def update_record(root, name):
     manifest = json.loads((root / "manifest.json").read_text())
     record = {"sha256": sha256(root / name), "bytes": (root / name).stat().st_size}
-    if tensors is not None:
-        keys = sorted(tensors)
-        record.update(
-            tensor_keys=keys,
-            tensor_key_sha256=hashlib.sha256("\n".join(keys).encode()).hexdigest(),
-            tensor_metadata={
-                k: {"shape": list(v.shape), "dtype": str(v.dtype)} for k, v in tensors.items()
-            },
-            exact_tensor_roundtrip=True,
-        )
     manifest["outputs"][name] = record
     (root / "manifest.json").write_text(json.dumps(manifest))
 
@@ -98,7 +87,7 @@ def bundle_factory(tmp_path):
             ("codebooks.safetensors", {"codebooks": model.backbone.codebooks}),
         ):
             save_file(tensors, root / name)
-            update_record(root, name, tensors)
+            update_record(root, name)
         return root, model
 
     return make

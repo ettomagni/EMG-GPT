@@ -2,13 +2,10 @@
 
 ## Input and Python API
 
-Use raw emg2pose EMG at 2 kHz with 16 channels, in its native amplitude scale.
-The source does not specify a physical voltage unit; the API neither normalizes
-nor converts amplitudes. Other sensors and scales are unvalidated. NPZ files need
-`emg` (`[samples,16]`, finite real values), scalar `sampling_rate_hz=2000` and
-Unicode `channel_names` (`c1` through `c16` in the supplied column order).
-Object arrays are rejected. Official HDF5 recordings need the `data` extra;
-only EMG and timestamps are read, never target poses.
+Use raw 2-kHz emg2pose EMG in its native amplitude scale. NPZ files contain
+`emg` (finite real `[samples,16]`), scalar `sampling_rate_hz=2000` and Unicode
+`channel_names` (`c1` through `c16` in column order). Object arrays are rejected.
+The `data` extra enables official HDF5 input; only EMG and timestamps are read.
 
 ```python
 import numpy as np
@@ -28,44 +25,40 @@ result.save("prediction-python.npz")
 Use `device="cuda"` (CLI: `--device cuda`) for NVIDIA GPU inference with a
 CUDA-enabled PyTorch installation. MPS is unsupported. Outputs are never overwritten.
 
-For a file-handling smoke check without real data, save a synthetic input:
+## Smoke check
+
+After installing and downloading the Regression weights as in the README:
 
 ```bash
-python - <<'PY'
+python - <<'PYSMOKE'
 import numpy as np
 np.savez("smoke-input.npz", emg=np.zeros((14000, 16), dtype=np.float32),
          sampling_rate_hz=2000,
          channel_names=np.array([f"c{i}" for i in range(1, 17)]))
-PY
+PYSMOKE
+emg-gpt-predict --model-dir weights/regression \
+  --tokenizer weights/NeuroRVQ_EMG_tokenizer_v1.pt \
+  --input smoke-input.npz --output smoke-prediction.npz --device cpu
 ```
 
-Use `--input smoke-input.npz --max-windows 1` with the README prediction command.
-This constant signal checks execution, not accuracy.
+This synthetic signal tests file handling and execution, not model accuracy.
+Use a new output filename when rerunning: predictions are never overwritten.
 
 ## Preprocessing and alignment
 
-Supply the complete raw recording: zero-phase filtering makes inference offline.
-Prefiltering, resampling, normalization or processing independent chunks changes
-the input and can change predictions. A full window needs at least 13,119 samples.
+Supply the complete recording: third-order Butterworth filtering (`sosfiltfilt`,
+20–399.5 Hz) followed by `resample_poly(1,2)` makes inference offline. The original
+float32 casts are preserved; amplitudes are not normalized. Prefiltering or splitting
+a recording into chunks changes predictions. Other sensors/scales are unvalidated.
 
-All output times use the nominal 2-kHz sample-index grid, relative to the first
-sample. Official HDF5 acquisition timestamps contain clock jitter; they are
-checked for monotonicity but do not replace this historical alignment.
-The supplied channels must correspond to emg2pose electrodes, not arbitrary
-sensor names. Incoming columns are mapped explicitly to the tokenizer order:
-`c1,c10,c11,c12,c13,c14,c15,c16,c2,c3,c4,c5,c6,c7,c8,c9`.
+Channels are reordered to `c1,c10,c11,c12,c13,c14,c15,c16,c2,c3,c4,c5,c6,c7,c8,c9`.
+Independent 200-ms patches every 40 ms use temporal embedding 255. Tokens have four
+branches and four RVQ levels; low-level pose input is int64 `[batch,150,16,4,4]`.
 
-The frontend uses third-order Butterworth SOS filtering (`sosfiltfilt`) at
-20–399.5 Hz and `resample_poly(1,2)`, with the historical float32 casts.
-No additional normalization is applied. Each independent 200-ms patch uses the
-last learned temporal embedding (index 255 of 256); the tokenizer produces four
-branches and four RVQ levels at 25 Hz. Low-level pose input is int64 `[batch,150,16,4,4]`.
-The 16-frame storage block does not determine the embedding index.
-
-Historical storage rounded token counts down to multiples of 16. Window planning
-preserves that truncation and the original full-context raw-sample bound. Short
-recordings are rejected; partial contexts are not padded. `max_windows` limits
-prediction only, not the recording supplied to the zero-phase filter.
+Planning preserves the original 16-frame storage truncation. A full window needs
+13,119 raw samples; partial windows are not padded. `max_windows` limits decoding,
+while filtering still uses the whole recording. Timestamps use the nominal 2-kHz
+sample grid relative to the recording start; HDF5 clock jitter does not change it.
 
 | Setting | Regression | Tracking |
 | --- | --- | --- |
@@ -80,54 +73,60 @@ warm-up, gaps and the unscored tail; comparisons must use the same coverage.
 
 For token start `s` and output index `j=0..249`, the raw sample index is
 `400 + (s + 25 + offset) * 80 + j * 40`. Divide by 2000 for seconds.
-Tracking repeats features to 50 Hz and adds its first predicted angular increment
-to the supplied boundary pose immediately, including at the boundary timestamp.
-This reproduces the historical decoder convention. It does not clamp that first
-output to the supplied pose. Regression interpolates features and internally
-initializes its rollout. Each window resets recurrent state.
+Tracking repeats features to 50 Hz and adds the first predicted increment at the
+boundary timestamp. Regression interpolates features and initializes its own
+rollout. Both tasks reset recurrent state for each window.
 
 ## Tracking input
 
-Plan without loading weights or targets:
+Download the Tracking bundle:
 
-```python
-from emg_gpt import plan_windows
-
-plan = plan_windows(n_samples=len(raw_emg), task="tracking")
-times = plan.boundary_timestamps_s
+```bash
+hf download ettoremagni/EMG-GPT \
+  --revision 812d159b4e7a4fb1c95da865f4f1e2635fa6522f \
+  --include "tracking/*" --include "LICENSE" --local-dir weights
 ```
 
-Supply `initial_poses_rad` of shape `[len(times),20]` and
-`boundary_timestamps_s=times` to `PosePredictor.predict`. These are caller-provided
-measurements in radians; the API checks shape, finiteness and alignment.
-To skip a window with no valid boundary, set its entire 20-joint row to `NaN`.
-That window retains its timestamps and position in the output, with `NaN` angles,
-`valid=False` and no coverage. Its decoder is not run; other windows are unaffected.
-Partial-NaN rows, infinities and all-zero poses are rejected. For official emg2pose
-poses, convert invalid IK rows to all-NaN explicitly, as shown below.
-Angles exceeding one full turn (`2*pi` radians) are also rejected as a unit sanity
-check. This is not an anatomical validator and cannot detect every degrees/radians
-mix-up. Use the same `max_windows` for planning and predicting: the limit counts
-planned windows, including skips, rather than requesting extra valid windows.
-
-For the CLI, prepare the measured poses in the joint order below and save:
+Plan the required measurement times without loading weights or targets:
 
 ```python
 import numpy as np
 from emg_gpt import plan_windows
 
-plan = plan_windows(len(raw_emg), "tracking")
-# measured_poses_rad: one measurement per plan.boundary_timestamps_s.
-initial = np.asarray(measured_poses_rad, dtype=np.float32).copy()
+with np.load("recording.npz", allow_pickle=False) as data:
+    plan = plan_windows(n_samples=len(data["emg"]), task="tracking")
+times = plan.boundary_timestamps_s
+print(times)
+```
+
+Pass measurements as `initial_poses_rad` (`[len(times),20]`, radians) and
+`boundary_timestamps_s=times` to the API. An all-NaN row skips that window:
+its angles are NaN, `valid=False`, and coverage is false; timestamps are preserved.
+Partial-NaN, infinite, all-zero or outside-±2π rows are rejected. Use the same
+`max_windows` for planning and predicting; it includes skipped windows.
+
+For the CLI, save your measurements at those times in `measured-poses.npy`,
+shape `[len(times),20]`, in radians and the joint order below. Then run:
+
+```python
+import numpy as np
+from emg_gpt import plan_windows
+
+with np.load("recording.npz", allow_pickle=False) as data:
+    plan = plan_windows(len(data["emg"]), "tracking")
+initial = np.load("measured-poses.npy", allow_pickle=False).astype(np.float32)
 missing = ~np.isfinite(initial).all(axis=1) | np.isclose(initial, 0).all(axis=1)
 initial[missing] = np.nan
 np.savez("boundary.npz", initial_poses_rad=initial,
          boundary_timestamps_s=plan.boundary_timestamps_s)
 ```
 
-Pass `--model-dir weights/tracking --boundary-poses boundary.npz`
-to the same prediction command used for Regression.
-Never label an independently carried prediction as ground-truth initialization.
+```bash
+emg-gpt-predict --model-dir weights/tracking \
+  --tokenizer weights/NeuroRVQ_EMG_tokenizer_v1.pt \
+  --input recording.npz --boundary-poses boundary.npz \
+  --output tracking-prediction.npz --device cpu
+```
 
 ## Prediction NPZ
 
@@ -149,46 +148,44 @@ Metadata schema 2 records `planned_windows`, `predicted_windows`, `skipped_windo
 If every boundary is missing, the result keeps all planned rows with zero coverage.
 Joint order is thumb CMC-FE, CMC-AA, MCP-FE, IP-FE; then index, middle, ring and
 pinky, each MCP-AA, MCP-FE, PIP-FE, DIP-FE. FE denotes flexion/extension and AA
-abduction/adduction, using the pinned emg2pose convention. Output contains joint
-angles only, not fingertip positions or hand meshes.
+abduction/adduction, using the pinned emg2pose convention.
 
 Saved predictions and downloaded tokenizer files default to owner-only access
 (`0600`). Set group permissions explicitly if sharing these files.
 
 ## Reproducibility
 
-Use package version **0.1.2 or later** for explicit missing-boundary skips.
-Version 0.1.1 fixed the temporal embedding (15 → 255); existing weights remain
-valid. Run examples from this release checkout or a neutral directory to avoid
-shadowing by another package named `emg_gpt`.
-
-The corrected release was compared with the original research tokenizer, dataset
-and pose checkpoints on two validation recordings, two windows per task and
-recording: 303,104 token-ID comparisons and 40,000 predicted joint angles matched
-exactly. Both tasks also passed API/CLI output parity. This check used CPU,
-Python 3.12, PyTorch 2.14.1 and token batch size 16; it is not a benchmark rerun.
-These CPU compatibility checks are separate from the original CUDA training.
-Release inference has not yet been checked for numerical parity on CUDA.
-
-`PosePredictor` and the CLI require an official bundle from the packaged artifact
-catalog. The low-level `emg_gpt.bundle.load_pose_model_bundle` can load other
-self-consistent bundles; use `require_pinned=True` to require official identity.
-Integrity against a bundle's own manifest alone does not establish that identity.
-
-Exact parity requires the same device, runtime, preprocessing and token batch
-size (default 16). Small floating-point differences can change a nearest-code
-decision; bitwise equivalence across batch sizes or hardware is not promised.
-For the CPU test environment and source checks:
+Install the tested CPU dependencies, then run the lightweight checks:
 
 ```bash
 python -m pip install '.[dev,data,download]' -c constraints/cpu-tested.txt
-python -m pytest
+python -m pytest -m "not weights"
 ruff check src scripts tests
 python scripts/check_release.py
+cffconvert --validate
 python -m build
 ```
 
-CI checks the pinned CPU environment on Python 3.11/3.12 and minimum dependencies
-(`constraints/minimum.txt`) on Python 3.11. It tests the source, wheel and source
-distribution, including bundle identity, token layout, input validation and CLI.
-CI uses synthetic fixtures; real-checkpoint parity was verified separately above.
+After downloading **both** bundles and the tokenizer into `weights/`, run the
+integration tests against frozen outputs from the original research implementation:
+
+```bash
+EMG_GPT_WEIGHTS="$PWD/weights" python -m pytest -m weights
+```
+
+The synthetic reference covers raw EMG through both decoders and detects tokenizer
+misalignment. Its source/checkpoint hashes are recorded alongside it.
+[`make_reference.py`](../tests/make_reference.py) requires the original research
+environment and checkpoints to regenerate it; this is not an accuracy benchmark.
+
+CI tests the installed wheel on Python 3.11–3.14 and minimum dependencies on 3.11.
+It builds the wheel from the source archive and runs the weight tests on pushes
+and manual runs. Release parity has also been checked on real recordings on CPU;
+CUDA numerical parity remains unverified. Training used CUDA.
+
+Use the same runtime, device and token batch size (default 16) for numerical
+comparisons: floating-point differences can change RVQ code selection. The weight
+tests require at least 99.99% token agreement and pose differences below `1e-5` rad.
+`PosePredictor` and the CLI require official bundles with verified catalog hashes.
+The low-level `load_pose_model_bundle` also supports self-consistent custom bundles;
+pass `require_pinned=True` to require an official bundle.

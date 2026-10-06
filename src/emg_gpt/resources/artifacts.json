@@ -1,14 +1,11 @@
 {
   "schema_version": 2,
-  "scope": "inference_only",
   "tokenizer": {
     "id": "neurorvq_emg_tokenizer_v1",
     "kind": "tokenizer_checkpoint",
-    "release_required": true,
     "filename": "NeuroRVQ_EMG_tokenizer_v1.pt",
     "sha256": "0d255bcc9f1c75ccc374cba06eab476f15bf5fb2a87115d6dc8d2dc0adadce49",
     "bytes": 574583162,
-    "verification": "verified_local_sha256_and_size",
     "public_source": {
       "provider": "huggingface",
       "repo_id": "ntinosbarmpas/NeuroRVQ",
@@ -22,7 +19,6 @@
       "source_checkpoint_sha256": "68bf6607f6a65f3982ea6cbe823a03e6a8aa46212c28408441251c72bd01c0a9",
       "selected_pose_step": 2000,
       "gpt_initializer_step": 280000,
-      "status": "real_end_to_end_verified",
       "files": {
         "model.safetensors": {
           "sha256": "863e182f42c35308975d0a8d5a49a855b86e2255c213694ca0cda9ac23bb7f11",
@@ -53,7 +49,6 @@
       "source_checkpoint_sha256": "21054c93dd7d5b1bb3bc1485abb7006222f2ff26ba5c597b853dd9006cd5baa5",
       "selected_pose_step": 5000,
       "gpt_initializer_step": 400000,
-      "status": "real_end_to_end_verified",
       "files": {
         "model.safetensors": {
           "sha256": "af38cd0661d823b1ad9448a8325832fb60f5acad6e8b421ef6701dc8ad904a6a",

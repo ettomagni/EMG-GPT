@@ -79,12 +79,12 @@ against the [artifact catalog](src/emg_gpt/resources/artifacts.json).
 
 ## Install
 
-Use Python 3.11 or 3.12:
+Use Python 3.11 or newer (tested on 3.11–3.14):
 
 ```bash
 git clone https://github.com/ettomagni/EMG-GPT.git
 cd EMG-GPT
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install '.[download]'
 ```
@@ -95,13 +95,11 @@ For NVIDIA GPU inference, install a CUDA-enabled PyTorch build using the
 GPU. MPS is unsupported. Add the `data` extra (`pip install '.[data]'`) to read
 official emg2pose HDF5 recordings. No hand model or meshes are needed.
 
-Use **version 0.1.2 or later**, with corrected tokenizer alignment and explicit
-skips for missing Tracking boundaries. Existing weights
-remain valid; see [compatibility and verification](docs/inference.md#reproducibility).
-
 ## Regression quick start
 
-Download the Regression bundle and tokenizer, then predict from raw EMG:
+Download the Regression bundle and tokenizer, then predict from your raw EMG
+file `recording.npz` (format below). For a runnable synthetic example, see the
+[smoke check](docs/inference.md#smoke-check).
 
 ```bash
 hf download ettoremagni/EMG-GPT \
@@ -139,14 +137,6 @@ Predictions are `[windows,250,20]` joint angles in radians at 50 Hz. A full wind
 needs at least 13,119 raw samples. Timestamps and a coverage mask identify warm-up,
 inter-window gaps and the unscored tail. Tracking requires explicit boundary poses;
 target poses are never read automatically. See the guide for exact alignment.
-
-## Verification
-
-CI checks Python 3.11/3.12, dependencies, input validation and installed packages.
-Release outputs were also compared against the original implementation on real
-recordings and checkpoints. Those compatibility checks ran on CPU; CUDA inference
-has not yet been checked for release parity. Commands and exact test scope are in
-[the inference guide](docs/inference.md#reproducibility).
 
 ## Citation
 

@@ -1,14 +1,14 @@
-# Direct dependencies tested on macOS CPU, Python 3.11/3.12, 2026-10-06.
+# Direct dependencies tested on macOS CPU, Python 3.11–3.14, 2026-10-06.
 # pip install '.[dev,data,download]' -c constraints/cpu-tested.txt
 # These are inference constraints, not a historical training environment.
 einops==0.8.2
 h5py==3.16.0
 huggingface-hub==2.1.1
 numpy==2.4.6; python_version == "3.11"
-numpy==2.5.3; python_version == "3.12"
+numpy==2.5.3; python_version >= "3.12"
 safetensors==0.8.0
 scipy==1.17.1; python_version == "3.11"
-scipy==1.18.1; python_version == "3.12"
+scipy==1.18.1; python_version >= "3.12"
 torch==2.14.1
 build==1.6.1
 cffconvert==2.0.0

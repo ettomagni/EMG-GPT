@@ -1,6 +1,6 @@
 name: inference checks
 
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 permissions:
   contents: read
@@ -10,7 +10,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build ruff cffconvert -c constraints/cpu-tested.txt
+      - run: ruff check src scripts tests
+      - run: python scripts/check_release.py
+      - run: cffconvert --validate
+      - name: Build the wheel from the source distribution
+        run: |
+          python -m build --sdist
+          python -m pip wheel --no-deps --wheel-dir dist dist/*.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: distributions
+          path: dist/
+
   test:
+    needs: package
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -21,11 +44,15 @@ jobs:
             constraints: cpu-tested
           - python-version: "3.12"
             constraints: cpu-tested
+          - python-version: "3.13"
+            constraints: cpu-tested
+          - python-version: "3.14"
+            constraints: cpu-tested
           - python-version: "3.11"
             constraints: minimum
     env:
       OMP_NUM_THREADS: "1"
-      PYTHONDONTWRITEBYTECODE: "1"
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,26 +61,27 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install CPU runtime and test tools
-        run: |
-          python -m pip install torch --no-deps -c constraints/${{ matrix.constraints }}.txt --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install '.[dev,data,download]' -c constraints/${{ matrix.constraints }}.txt
-          python -m pip check
-      - run: ruff check src scripts tests
-      - run: python scripts/check_release.py
-      - run: python -m pytest
-      - name: Build wheel and source distribution
-        run: python -m build
-      - name: Install each distribution and test outside the checkout
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: distributions
+          path: dist
+      - name: Install wheel and CPU dependencies
         shell: bash
         run: |
-          for package in "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/dist/*.tar.gz; do
-            python -m pip install --force-reinstall --no-deps "$package"
-            (
-              cd "$RUNNER_TEMP"
-              emg-gpt-predict --help
-              emg-gpt-download-tokenizer --help
-              python -c "from emg_gpt import PosePredictor, plan_windows; from emg_gpt.artifacts import resource_json; assert resource_json('tokenizer.json')['n_code'] == 8192; assert plan_windows(14000, 'regression').timestamps_s[0,0] == 1.2"
-              python -m pytest "$GITHUB_WORKSPACE/tests"
-            )
-          done
+          python -m pip install torch --no-deps -c constraints/${{ matrix.constraints }}.txt --index-url https://download.pytorch.org/whl/cpu
+          wheels=(dist/*.whl)
+          python -m pip install "${wheels[0]}[dev,data,download]" -c constraints/${{ matrix.constraints }}.txt
+          python -m pip check
+      - name: Test the installed package outside the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          emg-gpt-predict --help
+          emg-gpt-download-tokenizer --help
+          python -m pytest "$GITHUB_WORKSPACE/tests" -m "not weights"
+      - name: Compare real checkpoints with the original implementation
+        if: matrix.python-version == '3.12' && github.event_name != 'pull_request'
+        run: |
+          cd "$RUNNER_TEMP"
+          hf download ettoremagni/EMG-GPT --revision 812d159b4e7a4fb1c95da865f4f1e2635fa6522f --include "regression/*" --include "tracking/*" --include "LICENSE" --local-dir weights
+          emg-gpt-download-tokenizer --output weights/NeuroRVQ_EMG_tokenizer_v1.pt
+          EMG_GPT_WEIGHTS="$RUNNER_TEMP/weights" python -m pytest "$GITHUB_WORKSPACE/tests" -m weights

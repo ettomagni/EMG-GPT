@@ -46,7 +46,7 @@ def test_invalid_plan(n, task, limit):
 
 @pytest.fixture
 def fake_predictor(monkeypatch):
-    """Exercise API contracts only; real-weight parity is a separate manual check."""
+    """Exercise API contracts only; real-weight parity lives in test_weights.py."""
 
     class Decoder:
         def eval(self):

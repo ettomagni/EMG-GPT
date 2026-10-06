@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use EMG-GPT, please cite the paper in preferred-citation."
 type: software
 title: EMG-GPT
-version: 0.1.2
+version: 0.1.3
 date-released: 2026-10-06
 repository-code: "https://github.com/ettomagni/EMG-GPT"
 authors:

@@ -1,0 +1,30 @@
+{
+  "description": "Original research implementation, synthetic EMG, one window per task; not an accuracy benchmark.",
+  "runtime": {
+    "python": "3.12.12",
+    "torch": "2.14.1",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "device": "cpu",
+    "threads": 1,
+    "token_batch_size": 16
+  },
+  "input_sha256": "b2b5afcbd7430e4d0bb63549421851818d238cc646a791972a7a83ae42d0050b",
+  "reference_sha256": "2cbacc34c1d74f2dfb1a3091cc971fbdadb93b0c1d8a54a26a4c64c6a7ecb1ed",
+  "source_sha256": {
+    "scripts/tokenize_emg2pose.py": "fc196e4b6ad683eda44a8d6b91afc3cb3a49f8c722152b87c2d69f5ad7500537",
+    "flags/NeuroRVQ_EMG_v1.yml": "0cd85a2eb468ac5d989c58b8aa4aa5fa0759fcb9e7ec63b0f67fa28329955a0a",
+    "emg_pose/model.py": "48d76fe114dc8196e305250f9db61e9f011c82793dd8818e1d62513e2e378a18",
+    "emg_gpt/model.py": "59c72d50c7cc83526f9289a7c98a48e8552bcb99a664c5bb21479f5d927fd11a",
+    "NeuroRVQ_EMG/NeuroRVQ.py": "8934f1613e08ffb3080f3b111d1472646e68714fbf5f46e4adbae73db00ed39f",
+    "NeuroRVQ_EMG/NeuroRVQ_modules.py": "1bebc02e57afa2aae6ea7d20ea8d6a2d233aea49fc205806f870d7e5c2f8fbee",
+    "NeuroRVQ_EMG/RVQ.py": "a14b1571396c00ef878bfa61180121f2b671d7df00794b7e4eb0283de63ff352",
+    "NeuroRVQ_EMG/norm_ema_quantizer.py": "dcfe3152132b27b893117ccf17c770939a2530a157faff9a6db7ee7a73e20a17"
+  },
+  "checkpoint_sha256": {
+    "regression": "68bf6607f6a65f3982ea6cbe823a03e6a8aa46212c28408441251c72bd01c0a9",
+    "tracking": "21054c93dd7d5b1bb3bc1485abb7006222f2ff26ba5c597b853dd9006cd5baa5"
+  },
+  "tokenizer_sha256": "0d255bcc9f1c75ccc374cba06eab476f15bf5fb2a87115d6dc8d2dc0adadce49",
+  "codebooks_sha256": "d0d352dd803f76dc3a6d9d790c9226e7ba529b0d4c3aa615b2a95616b5bf5c8f"
+}

@@ -86,8 +86,6 @@ class EMGGPTConfig:
             "frame_input_mode": "rvq_sum",
             "frame_pool": "cls",
             "rvq_input_normalization": "layernorm",
-            "aux_latent_weight": 0.0,
-            "geometry_soft_target_weight": 0.0,
         }
         for name, value in required.items():
             if getattr(self, name) != value:
@@ -334,10 +332,6 @@ class EMGFrameGPT(nn.Module):
             persistent=False,
         )
         self._codebooks_ready = False
-
-    @property
-    def requires_codebooks(self):
-        return True
 
     def set_codebooks(self, codebooks: torch.Tensor) -> None:
         if codebooks.shape != self.codebooks.shape or codebooks.dtype != self.codebooks.dtype:

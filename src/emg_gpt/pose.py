@@ -41,19 +41,6 @@ class PoseModelConfig:
         return asdict(self)
 
 
-class TemporalFeatureAdapter(nn.Module):
-    """Identity adapter retained in the selected checkpoint topology."""
-
-    def __init__(self, d_model: int, mode: str):
-        super().__init__()
-        if mode != "hidden":
-            raise ValueError("Only the selected hidden-state pose decoders are supported")
-        self.proj = None
-
-    def forward(self, hidden: torch.Tensor) -> torch.Tensor:
-        return hidden
-
-
 class StateConditionedTrackingHead(nn.Module):
     """Token-rate features to a 50 Hz pose trajectory with pose feedback.
 
@@ -75,7 +62,6 @@ class StateConditionedTrackingHead(nn.Module):
         pose_steps_per_frame: int,
         velocity_scale: float,
         upsample_mode: TrackingUpsampleMode,
-        temporal_feature_mode: TemporalFeatureMode,
     ) -> None:
         super().__init__()
         if feature_dim < 1 or hidden_size < 1 or num_layers < 1:
@@ -91,7 +77,6 @@ class StateConditionedTrackingHead(nn.Module):
         self.pose_steps_per_frame = int(pose_steps_per_frame)
         self.velocity_scale = float(velocity_scale)
         self.upsample_mode = upsample_mode
-        self.temporal_features = TemporalFeatureAdapter(d_model, temporal_feature_mode)
         self.feature_proj = nn.Linear(d_model, feature_dim)
         self.rnn = nn.LSTM(
             input_size=feature_dim + n_joints,
@@ -103,7 +88,6 @@ class StateConditionedTrackingHead(nn.Module):
         self.out = nn.Sequential(nn.LeakyReLU(), nn.Linear(hidden_size, n_joints))
 
     def _expand_features(self, hidden: torch.Tensor) -> torch.Tensor:
-        hidden = self.temporal_features(hidden)
         scored_hidden = self.feature_proj(hidden[:, self.left_context_frames :])
         return scored_hidden.repeat_interleave(self.pose_steps_per_frame, dim=1)
 
@@ -153,7 +137,6 @@ class StateConditionedRegressionHead(nn.Module):
         pose_steps_per_frame: int,
         position_steps: int,
         output_scale: float,
-        temporal_feature_mode: TemporalFeatureMode,
     ) -> None:
         super().__init__()
         if feature_dim < 1 or hidden_size < 1 or num_layers < 1:
@@ -167,7 +150,6 @@ class StateConditionedRegressionHead(nn.Module):
         self.pose_steps_per_frame = int(pose_steps_per_frame)
         self.position_steps = int(position_steps)
         self.output_scale = float(output_scale)
-        self.temporal_features = TemporalFeatureAdapter(d_model, temporal_feature_mode)
         self.feature_proj = nn.Linear(d_model, feature_dim)
         self.rnn = nn.LSTM(
             input_size=feature_dim + n_joints,
@@ -185,7 +167,6 @@ class StateConditionedRegressionHead(nn.Module):
             raise ValueError(
                 f"Input has {hidden.shape[1]} token frames but regression left context is {self.left_context_frames}"
             )
-        hidden = self.temporal_features(hidden)
         scored = self.feature_proj(hidden[:, self.left_context_frames :])
         rollout_steps = scored.shape[1] * self.pose_steps_per_frame
         features = F.interpolate(
@@ -213,6 +194,8 @@ class EMGPoseModel(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.config = config
+        if config.temporal_feature_mode != "hidden":
+            raise ValueError("Only hidden-state pose decoders are supported")
         common = dict(
             d_model=backbone.config.d_model,
             n_joints=config.n_joints,
@@ -220,7 +203,6 @@ class EMGPoseModel(nn.Module):
             num_layers=config.head_layers,
             dropout=config.dropout,
             pose_steps_per_frame=config.pose_steps_per_frame,
-            temporal_feature_mode=config.temporal_feature_mode,
         )
         if config.head_mode == "regression_lstm":
             self.pose_head = StateConditionedRegressionHead(

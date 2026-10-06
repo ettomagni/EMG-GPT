@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from pathlib import Path
 
 import torch
+from safetensors.torch import load_file
 from torch import nn
 
 from .artifacts import resource_json, sha256, verify_file
@@ -54,20 +54,28 @@ def validate_pose_evaluation_contract(
     return (task, normalized)
 
 
-def _verify_bundle(root: Path, required: tuple[str, ...], *, kind: str) -> dict:
+def _verify_bundle(root: Path, *, require_pinned: bool) -> tuple[dict, bool]:
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("schema_version") != 1:
         raise ValueError(f"Unsupported bundle manifest: {manifest_path}")
-    if manifest.get("kind") != kind:
-        raise ValueError(f"Bundle manifest kind is not {kind!r}: {manifest_path}")
+    if manifest.get("kind") != "pose-model":
+        raise ValueError(f"Not a pose-model manifest: {manifest_path}")
     source_sha256 = manifest.get("source", {}).get("sha256")
     if not isinstance(source_sha256, str) or _SHA256.fullmatch(source_sha256) is None:
         raise ValueError(f"Bundle manifest lacks a valid source SHA-256: {manifest_path}")
+    # Official bundles use the trusted catalog; other bundles use their own manifest.
+    for record in resource_json("artifacts.json")["pose_models"].values():
+        if record["source_checkpoint_sha256"] == source_sha256:
+            for name, identity in record["files"].items():
+                verify_file(root / name, identity)
+            return manifest, True
+    if require_pinned:
+        raise ValueError("Model is not a pinned EMG-GPT release bundle")
     outputs = manifest.get("outputs")
     if not isinstance(outputs, dict):
         raise ValueError(f"Bundle manifest lacks outputs: {manifest_path}")
-    for name in required:
+    for name in ("config.json", "model.safetensors", "codebooks.safetensors"):
         record = outputs.get(name)
         path = root / name
         if not isinstance(record, dict) or not path.is_file():
@@ -76,50 +84,7 @@ def _verify_bundle(root: Path, required: tuple[str, ...], *, kind: str) -> dict:
             raise ValueError(f"Bundle byte-size mismatch for {name}")
         if sha256(path) != record.get("sha256"):
             raise ValueError(f"Bundle SHA-256 mismatch for {name}")
-    return manifest
-
-
-def _load_safetensors(path: Path) -> dict[str, torch.Tensor]:
-    try:
-        from safetensors.torch import load_file
-    except ImportError as error:
-        raise ImportError("Install the required safetensors dependency") from error
-    return load_file(str(path), device="cpu")
-
-
-def _tensor_key_sha256(keys: object) -> str:
-    if not isinstance(keys, list) or not keys or (not all(isinstance(key, str) for key in keys)):
-        raise ValueError("Bundle tensor key manifest must be a non-empty string list")
-    if len(keys) != len(set(keys)) or keys != sorted(keys):
-        raise ValueError("Bundle tensor keys must be unique and sorted")
-    return hashlib.sha256("\n".join(keys).encode()).hexdigest()
-
-
-def _load_verified_safetensors(
-    root: Path, name: str, manifest: dict, *, require_metadata: bool = False
-) -> dict[str, torch.Tensor]:
-    record = manifest["outputs"][name]
-    expected_keys = record.get("tensor_keys")
-    expected_key_sha256 = _tensor_key_sha256(expected_keys)
-    if record.get("tensor_key_sha256") != expected_key_sha256:
-        raise ValueError(f"Bundle tensor-key SHA-256 mismatch for {name}")
-    if record.get("exact_tensor_roundtrip") is not True:
-        raise ValueError(f"Bundle does not attest exact tensor round-trip for {name}")
-    tensors = _load_safetensors(root / name)
-    if sorted(tensors) != expected_keys:
-        raise ValueError(f"Bundle tensor keys differ from the manifest for {name}")
-    metadata = record.get("tensor_metadata")
-    if require_metadata and (not isinstance(metadata, dict)):
-        raise ValueError(f"Bundle lacks tensor metadata for {name}")
-    if isinstance(metadata, dict):
-        if set(metadata) != set(tensors):
-            raise ValueError(f"Bundle tensor metadata keys differ for {name}")
-        for key, tensor in tensors.items():
-            expected = metadata[key]
-            actual = {"dtype": str(tensor.dtype), "shape": list(tensor.shape)}
-            if not isinstance(expected, dict) or expected != actual:
-                raise ValueError(f"Bundle tensor metadata mismatch for {name}:{key}")
-    return tensors
+    return manifest, False
 
 
 def _strict_load(module: nn.Module, tensors: dict[str, torch.Tensor], *, name: str) -> None:
@@ -146,21 +111,11 @@ def load_pose_model_bundle(
 ) -> EMGPoseModel:
     """Check bundle integrity; optionally require identity against the release catalog."""
     root = Path(directory)
-    manifest = _verify_bundle(
-        root, ("config.json", "model.safetensors", "codebooks.safetensors"), kind="pose-model"
-    )
+    manifest, pinned = _verify_bundle(root, require_pinned=require_pinned)
     document = json.loads((root / "config.json").read_text())
     if document.get("schema_version") != 1 or document.get("model_type") != "emg_gpt_pose_model":
         raise ValueError("Not a complete EMG-GPT pose-model bundle")
     source_sha256 = manifest.get("source", {}).get("sha256")
-    pinned = False
-    for record in resource_json("artifacts.json")["pose_models"].values():
-        if record["source_checkpoint_sha256"] == source_sha256 and record["files"]:
-            for name, identity in record["files"].items():
-                verify_file(root / name, identity)
-            pinned = True
-    if require_pinned and not pinned:
-        raise ValueError("Model is not a pinned EMG-GPT release bundle")
     if document.get("source_checkpoint_sha256") != source_sha256:
         raise ValueError("Pose config and manifest identify different source checkpoints")
     source_gpt_sha256 = document.get("source_gpt_checkpoint_sha256")
@@ -209,19 +164,12 @@ def load_pose_model_bundle(
     model = EMGPoseModel(backbone, pose_config)
     _strict_load(
         model,
-        _load_verified_safetensors(root, "model.safetensors", manifest, require_metadata=True),
+        load_file(str(root / "model.safetensors"), device="cpu"),
         name="Complete pose bundle",
     )
-    codebook_payload = _load_verified_safetensors(
-        root, "codebooks.safetensors", manifest, require_metadata=True
-    )
+    codebook_payload = load_file(str(root / "codebooks.safetensors"), device="cpu")
     if set(codebook_payload) != {"codebooks"}:
         raise ValueError("Codebook bundle must contain exactly the 'codebooks' tensor")
-    if backbone.requires_codebooks:
-        codebooks = codebook_payload["codebooks"]
-        if codebooks.dtype != backbone.codebooks.dtype:
-            raise ValueError("Codebook dtype does not match the pose backbone")
-        backbone.set_codebooks(codebooks)
-    model._bundle_source_sha256 = source_sha256
+    backbone.set_codebooks(codebook_payload["codebooks"])
     model._bundle_pinned = pinned
     return model.to(device).eval().requires_grad_(False)

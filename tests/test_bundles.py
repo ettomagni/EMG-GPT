@@ -52,7 +52,7 @@ def test_strict_tensor_loading_even_with_updated_manifest(bundle_factory, fault)
     else:
         tensors[key][0] = float("nan")
     save_file(tensors, root / "model.safetensors")
-    update_record(root, "model.safetensors", tensors)
+    update_record(root, "model.safetensors")
     with pytest.raises(ValueError, match="incompatible|non-finite"):
         load_pose_model_bundle(root)
 

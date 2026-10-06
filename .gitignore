@@ -1,55 +1,26 @@
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
-.mypy_cache/
-.cache/
 .coverage
-htmlcov/
-.env*
-
-# Environments and builds
 .venv/
 venv/
 build/
 dist/
-
-# Local editors and operating systems
 .DS_Store
+.env*
 .idea/
 .vscode/
-
-# Data, weights, and generated runs never belong in Git
-data/
-tokenized/
-pretrained_models/
 weights/
-artifacts-local/
-runs/
-outputs/
-reports/
-wandb/
-mlruns/
-lightning_logs/
-*.h5
-*.hdf5
-*.npz
-*.npy
+data/
 *.pt
 *.pth
 *.ckpt
 *.safetensors
-*.mp4
-*.gif
-*.zip
-*.tar
-*.tar.gz
-*.tgz
-*.7z
-
-# Generated scheduler and renderer files
-slurm-*.out
+*.h5
+*.hdf5
+*.npy
+*.npz
+!tests/fixtures/reference.npz
 *.log
-render_manifest.json

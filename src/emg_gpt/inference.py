@@ -170,6 +170,48 @@ def _validate_frontend(model, task: str, contract: dict) -> None:
         )
 
 
+def _check_boundaries(task: str, plan: WindowPlan, initial_poses_rad, boundary_timestamps_s):
+    """Validate explicit Tracking boundaries and identify all-NaN rows to skip."""
+    initial = None
+    skipped = np.zeros(len(plan.token_starts), dtype=bool)
+    if task == "tracking":
+        if initial_poses_rad is None or boundary_timestamps_s is None:
+            raise ValueError(
+                "Tracking requires initial_poses_rad and boundary_timestamps_s for every window"
+            )
+        initial = np.asarray(initial_poses_rad)
+        times = np.asarray(boundary_timestamps_s)
+        if initial.dtype.kind not in "fiu" or initial.shape != (len(plan.token_starts), 20):
+            raise ValueError("initial_poses_rad must be a real numeric [windows,20] array")
+        skipped = np.isnan(initial).all(axis=1)
+        if not np.isfinite(initial[~skipped]).all():
+            raise ValueError(
+                "Boundary rows must be finite radians or entirely NaN to skip a window"
+            )
+        if np.any(np.all(np.isclose(initial, 0.0), axis=1)):
+            raise ValueError(
+                "Boundary pose is all zero: emg2pose marks this as invalid IK; "
+                "supply a valid pose or mark the entire row NaN to skip that window"
+            )
+        # A generous unit sanity check, not anatomical limits or unit detection.
+        if np.any((initial < -2 * np.pi) | (initial > 2 * np.pi)):
+            raise ValueError(
+                "Boundary angle exceeds one full turn (2*pi radians); check units and pose validity"
+            )
+        if (
+            times.dtype.kind not in "fiu"
+            or times.shape != (len(initial),)
+            or not np.isfinite(times).all()
+            or not np.allclose(times, plan.boundary_timestamps_s, rtol=0, atol=1e-9)
+        ):
+            raise ValueError(
+                "Boundary timestamps must match predictor.plan(...).boundary_timestamps_s"
+            )
+    elif initial_poses_rad is not None or boundary_timestamps_s is not None:
+        raise ValueError("Regression does not accept boundary poses")
+    return initial, skipped
+
+
 class PosePredictor:
     """Offline inference using a complete pose bundle and the pinned NeuroRVQ tokenizer."""
 
@@ -235,43 +277,9 @@ class PosePredictor:
         if len(names) != 16 or set(names) != set(RAW_CHANNELS):
             raise ValueError("channel_names must contain c1 through c16 exactly once")
         plan = self.plan(len(raw), max_windows=max_windows)
-        initial = None
-        skipped = np.zeros(len(plan.token_starts), dtype=bool)
-        if self.task == "tracking":
-            if initial_poses_rad is None or boundary_timestamps_s is None:
-                raise ValueError(
-                    "Tracking requires initial_poses_rad and boundary_timestamps_s for every window"
-                )
-            initial = np.asarray(initial_poses_rad)
-            times = np.asarray(boundary_timestamps_s)
-            if initial.dtype.kind not in "fiu" or initial.shape != (len(plan.token_starts), 20):
-                raise ValueError("initial_poses_rad must be a real numeric [windows,20] array")
-            skipped = np.isnan(initial).all(axis=1)
-            if not np.isfinite(initial[~skipped]).all():
-                raise ValueError(
-                    "Boundary rows must be finite radians or entirely NaN to skip a window"
-                )
-            if np.any(np.all(np.isclose(initial, 0.0), axis=1)):
-                raise ValueError(
-                    "Boundary pose is all zero: emg2pose marks this as invalid IK; "
-                    "supply a valid pose or mark the entire row NaN to skip that window"
-                )
-            # A generous unit sanity check, not anatomical limits or unit detection.
-            if np.any((initial < -2 * np.pi) | (initial > 2 * np.pi)):
-                raise ValueError(
-                    "Boundary angle exceeds one full turn (2*pi radians); check units and pose validity"
-                )
-            if (
-                times.dtype.kind not in "fiu"
-                or times.shape != (len(initial),)
-                or not np.isfinite(times).all()
-                or not np.allclose(times, plan.boundary_timestamps_s, rtol=0, atol=1e-9)
-            ):
-                raise ValueError(
-                    "Boundary timestamps must match predictor.plan(...).boundary_timestamps_s"
-                )
-        elif initial_poses_rad is not None or boundary_timestamps_s is not None:
-            raise ValueError("Regression does not accept boundary poses")
+        initial, skipped = _check_boundaries(
+            self.task, plan, initial_poses_rad, boundary_timestamps_s
+        )
         raw = raw[:, [names.index(c) for c in RAW_CHANNELS]]
         processed = preprocess_emg(raw)
         # Keep filtering and token batches unchanged when limiting or skipping decoder windows.
