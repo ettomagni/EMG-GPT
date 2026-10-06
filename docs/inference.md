@@ -1,4 +1,52 @@
-# Inference contract
+# Inference guide
+
+## Input and Python API
+
+Use raw emg2pose EMG at 2 kHz with 16 channels, in its native amplitude scale.
+The source does not specify a physical voltage unit; the API neither normalizes
+nor converts amplitudes. Other sensors and scales are unvalidated. NPZ files need
+`emg` (`[samples,16]`, finite real values), scalar `sampling_rate_hz=2000` and
+Unicode `channel_names` (`c1` through `c16` in the supplied column order).
+Object arrays are rejected. Official HDF5 recordings need the `data` extra;
+only EMG and timestamps are read, never target poses.
+
+```python
+import numpy as np
+from emg_gpt import PosePredictor
+
+model = PosePredictor(
+    "weights/regression", "weights/NeuroRVQ_EMG_tokenizer_v1.pt", device="cpu",
+)
+with np.load("recording.npz", allow_pickle=False) as data:
+    result = model.predict(
+        data["emg"], sampling_rate_hz=data["sampling_rate_hz"].item(),
+        channel_names=data["channel_names"].tolist(),
+    )
+result.save("prediction-python.npz")
+```
+
+Use `device="cuda"` (CLI: `--device cuda`) for NVIDIA GPU inference with a
+CUDA-enabled PyTorch installation. MPS is unsupported. Outputs are never overwritten.
+
+For a file-handling smoke check without real data, save a synthetic input:
+
+```bash
+python - <<'PY'
+import numpy as np
+np.savez("smoke-input.npz", emg=np.zeros((14000, 16), dtype=np.float32),
+         sampling_rate_hz=2000,
+         channel_names=np.array([f"c{i}" for i in range(1, 17)]))
+PY
+```
+
+Use `--input smoke-input.npz --max-windows 1` with the README prediction command.
+This constant signal checks execution, not accuracy.
+
+## Preprocessing and alignment
+
+Supply the complete raw recording: zero-phase filtering makes inference offline.
+Prefiltering, resampling, normalization or processing independent chunks changes
+the input and can change predictions. A full window needs at least 13,119 samples.
 
 All output times use the nominal 2-kHz sample-index grid, relative to the first
 sample. Official HDF5 acquisition timestamps contain clock jitter; they are
@@ -26,6 +74,9 @@ prediction only, not the recording supplied to the zero-phase filter.
 | Pose offset (token frames) | 0 | 1 |
 | First scored time | 1.20 s | 1.24 s |
 | Initial pose | None | Explicit, at first scored time of each window |
+
+Regression leaves one-second gaps between scored windows. Coverage metadata exposes
+warm-up, gaps and the unscored tail; comparisons must use the same coverage.
 
 For token start `s` and output index `j=0..249`, the raw sample index is
 `400 + (s + 25 + offset) * 80 + j * 40`. Divide by 2000 for seconds.
@@ -96,11 +147,18 @@ Saved predictions and downloaded tokenizer files default to owner-only access
 
 ## Reproducibility
 
+Use package version **0.1.1 or later**. Version 0.1.0 selected temporal embedding
+15 instead of 255; the correction changes code only, and existing weights remain
+valid. Run examples from this release checkout or a neutral directory to avoid
+shadowing by another package named `emg_gpt`.
+
 The corrected release was compared with the original research tokenizer, dataset
 and pose checkpoints on two validation recordings, two windows per task and
 recording: 303,104 token-ID comparisons and 40,000 predicted joint angles matched
 exactly. Both tasks also passed API/CLI output parity. This check used CPU,
 Python 3.12, PyTorch 2.14.1 and token batch size 16; it is not a benchmark rerun.
+These CPU compatibility checks are separate from the original CUDA training.
+Release inference has not yet been checked for numerical parity on CUDA.
 
 `PosePredictor` and the CLI require an official bundle from the packaged artifact
 catalog. The low-level `emg_gpt.bundle.load_pose_model_bundle` can load other
@@ -110,4 +168,17 @@ Integrity against a bundle's own manifest alone does not establish that identity
 Exact parity requires the same device, runtime, preprocessing and token batch
 size (default 16). Small floating-point differences can change a nearest-code
 decision; bitwise equivalence across batch sizes or hardware is not promised.
-The pinned CPU constraints and minimum-runtime constraints serve different tests.
+For the CPU test environment and source checks:
+
+```bash
+python -m pip install '.[dev,data,download]' -c constraints/cpu-tested.txt
+python -m pytest
+ruff check src scripts tests
+python scripts/check_release.py
+python -m build
+```
+
+CI checks the pinned CPU environment on Python 3.11/3.12 and minimum dependencies
+(`constraints/minimum.txt`) on Python 3.11. It tests the source, wheel and source
+distribution, including bundle identity, token layout, input validation and CLI.
+CI uses synthetic fixtures; real-checkpoint parity was verified separately above.

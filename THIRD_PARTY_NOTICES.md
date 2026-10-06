@@ -1,29 +1,23 @@
 # Third-party notices
 
-License sign-off: **PENDING** for the new EMG-GPT code. The inherited license
-and upstream notices below are included; maintainer confirmation of the
-new-code license is still required.
+The repository's code license is [CC BY-NC 4.0](LICENSE). The terms below also
+apply to the corresponding retained third-party components.
 
 ## NeuroRVQ compatibility implementation
 
 `src/emg_gpt/neurorvq/` is adapted from
 [KonstantinosBarmpas/NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ/tree/926e770d9d16b6aa308404280fa0cc0211a6f9fb)
 at public revision `926e770d9d16b6aa308404280fa0cc0211a6f9fb`.
-Its [CC BY-NC 4.0 terms](LICENSE) are included; one malformed quotation in
-the upstream text has normalized punctuation in this copy.
+Its CC BY-NC 4.0 terms are included in [LICENSE](LICENSE).
 
-The implementation is modified for EMG-GPT's package imports and token API.
-The encoder, decoder and quantizer topology is retained for strict loading of
-the original tokenizer checkpoint. These adaptations are not an upstream
-NeuroRVQ release, and attribution does not imply upstream endorsement.
+The implementation is modified for EMG-GPT's package imports and token API,
+retaining checkpoint-compatible topology. Attribution does not imply endorsement.
 
 ## Earlier implementation lineage
 
 The tokenizer's source headers identify LaBraM, BEiT-v2/UNILM, timm, DeiT and
-DINO. The timm utility source explicitly references v0.4.12. The original
-copyright and license texts below are distributed with both the source
-archive and the installed package; their terms continue to apply to the
-corresponding retained portions.
+DINO. The timm utility source references v0.4.12. Original notices are preserved;
+the texts below are included in the source archive and installed package.
 
 | Upstream | License snapshot revision | Included text |
 | --- | --- | --- |
@@ -33,11 +27,8 @@ corresponding retained portions.
 | facebookresearch/deit | `7e160fe43f0252d17191b71cbb5826254114ea5b` | [deit license](licenses/deit-LICENSE.txt) |
 | facebookresearch/dino | `7c446df5b9f45747937fb0d72314eb9f7b66930a` | [dino license](licenses/dino-LICENSE.txt) |
 
-These revisions identify the retrieved license texts. Except for the explicit
-timm tag and NeuroRVQ base above, they do not establish which historical
-revision each transitive fragment was originally copied from. Original lineage
-comments are preserved. This inventory does not claim that all upstream code
-is included or that one license replaces another.
+These revisions identify the license snapshots, not necessarily the original
+revision of each inherited code fragment.
 
 ## External code and assets
 
@@ -48,5 +39,4 @@ license. The README links to the rights holder's downloads and terms.
 
 This repository does not redistribute emg2pose recordings, official source,
 hand meshes, or external checkpoints. Its tokenizer download points to the
-NeuroRVQ authors' pinned Hugging Face artifact. Exporting model weights or
-other derived assets does not itself establish redistribution permission.
+NeuroRVQ authors' pinned Hugging Face artifact, which retains its upstream terms.

@@ -4,7 +4,7 @@
 
 **Predictive Pretraining on Residual-Quantized EMG Tokens for Hand Pose Estimation**
 
-[Paper](https://arxiv.org/abs/2610.05235) · [Weights (private)](https://huggingface.co/ettoremagni/EMG-GPT) · [Citation](#citation)
+[Paper](https://arxiv.org/abs/2610.05235) · [Weights](https://huggingface.co/ettoremagni/EMG-GPT) · [Inference guide](docs/inference.md) · [Citation](#citation)
 
 Ettore Magni · Rolandos Alexandros Potamias · Stefanos Zafeiriou · Konstantinos Barmpas
 
@@ -16,12 +16,13 @@ Offline hand-pose inference from 16-channel EMG using a frozen
 [NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ) tokenizer, an adapted
 causal GPT and a state-conditioned pose decoder. Inference follows the figure's
 two pose paths with fixed weights; the pretraining head is bypassed.
-This release contains inference code only.
+This repository contains inference code only. The selected GPT checkpoints were
+pretrained with CUDA on an NVIDIA GH200 120 GB GPU; inference accepts CPU or CUDA.
 
 ## Paper results
 
-EMG-GPT test results from [Tables 1 and 3](https://arxiv.org/html/2610.05235v1),
-verified against the archived statistics for the checkpoints listed below.
+EMG-GPT test results from [Tables 1 and 3](https://arxiv.org/html/2610.05235v1)
+for the checkpoints below.
 Values are mean ± sample SD **across users**, not across training seeds; lower is better.
 
 | Task | Held-out condition | Angular MAE (°) ↓ | Landmark error (mm) ↓ |
@@ -34,7 +35,6 @@ Values are mean ± sample SD **across users**, not across training seeds; lower 
 | Tracking | User, Stage | 12.2 ± 1.3 | 16.9 ± 1.4 |
 
 Tracking uses a ground-truth boundary pose; Regression does not.
-These are the paper's archived evaluations, not new smoke-test scores.
 The inference API returns joint angles; landmark evaluation and training are outside this release.
 
 ## Comparison on the same test samples
@@ -59,58 +59,50 @@ Values are mean ± sample SD across users.
 | Tracking | User, Stage | vEMG2Pose | 11.33 ± 0.97 | 15.64 ± 1.33 |
 | Tracking | User, Stage | EMG-GPT | 12.18 ± 1.25 | 16.93 ± 1.36 |
 
-Each model retains its native frontend. This local comparison does not reproduce
-the original vEMG2Pose benchmark protocol or establish statistical superiority.
-The corresponding evaluator is outside this inference-only package.
+Each model retains its native frontend. This comparison uses the paper's matched
+evaluation protocol; it does not reproduce the original vEMG2Pose benchmark.
 
-## Availability
+## Checkpoints
 
-**Complete pose bundles are hosted privately on Hugging Face. Public downloads are pending.**
+The [Hugging Face repository](https://huggingface.co/ettoremagni/EMG-GPT) contains
+two bundles, each with the **adapted GPT backbone and pose head together**:
 
-| Artifact | Selected checkpoint | Availability |
+| Bundle | GPT initialization | Selected pose checkpoint |
 | --- | --- | --- |
-| NeuroRVQ tokenizer | Upstream EMG v1 | Pinned, verified download |
-| Regression | GPT 280k → pose warm-start → full fine-tuning, step 2,000 | Verified export; Hugging Face access required |
-| Tracking | GPT 400k → pose warm-start → full fine-tuning, step 5,000 | Verified export; Hugging Face access required |
+| `regression/` | Step 280,000 | Pose warm-start → full fine-tuning, step 2,000 |
+| `tracking/` | Step 400,000 | Pose warm-start → full fine-tuning, step 5,000 |
 
-Each pose directory must contain `config.json`, `model.safetensors`,
-`codebooks.safetensors` and `manifest.json`. These bundles contain the **adapted
-backbone and pose head together**. Original GPT initializers, warm-start weights
-and training data are not needed. Recorded identities are in
-[src/emg_gpt/resources/artifacts.json](src/emg_gpt/resources/artifacts.json).
-The raw-EMG API requires these pinned bundles and checks hashes, tensor keys,
-shapes, dtypes, protocol and tokenizer/codebook compatibility.
+Each contains `config.json`, `model.safetensors`, `codebooks.safetensors` and
+`manifest.json`. The shared NeuroRVQ EMG v1 tokenizer is downloaded separately
+from its authors. Downloads use pinned revisions; the loader checks file hashes
+against the [artifact catalog](src/emg_gpt/resources/artifacts.json).
 
 ## Install
 
-Using Python 3.11 or 3.12 (repository access is required while the code is private):
+Use Python 3.11 or 3.12:
 
 ```bash
 git clone https://github.com/ettomagni/EMG-GPT.git
 cd EMG-GPT
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install . -c constraints/cpu-tested.txt
+python -m pip install '.[download]'
 ```
 
-Use package version **0.1.1 or later**. Version 0.1.0 used the wrong temporal
-embedding in the tokenizer; the corrected code uses index 255. Existing weights
-remain valid. Run examples from this release directory or a neutral directory;
-the research checkout contains a different package also named `emg_gpt`.
+For NVIDIA GPU inference, install a CUDA-enabled PyTorch build using the
+[PyTorch installation guide](https://pytorch.org/get-started/locally/), then use
+`--device cuda`. The example below uses `--device cpu` so it also runs without a
+GPU. MPS is unsupported. Add the `data` extra (`pip install '.[data]'`) to read
+official emg2pose HDF5 recordings. No hand model or meshes are needed.
 
-Local inference needs PyTorch, NumPy, SciPy, einops and safetensors. Install
-`'.[data]'` for official emg2pose HDF5 input or `'.[download]'` for the tokenizer
-helper. CPU is the verified baseline. CUDA is selectable but has not been tested
-for this refactor; MPS is not supported. No external hand model or meshes are needed.
+Use **version 0.1.1 or later**, which fixes tokenizer alignment. Existing weights
+remain valid; see [compatibility and verification](docs/inference.md#reproducibility).
 
 ## Regression quick start
 
-With access to the [private model repository](https://huggingface.co/ettoremagni/EMG-GPT),
-download the pinned Regression bundle into `weights/regression/`:
+Download the Regression bundle and tokenizer, then predict from raw EMG:
 
 ```bash
-python -m pip install '.[download]' -c constraints/cpu-tested.txt
-hf auth login
 hf download ettoremagni/EMG-GPT \
   --revision 5b1b58089a780965dba0e35dfb97bd464d8b3abd \
   --include "regression/*" --local-dir weights
@@ -121,84 +113,38 @@ emg-gpt-predict \
   --input recording.npz --output prediction.npz --device cpu
 ```
 
-For Tracking, download `tracking/*` instead and supply the explicit boundary
-poses described below. Both bundles use the same pinned Hugging Face revision.
+For Tracking, download `tracking/*` from the same revision and supply one measured
+boundary pose per window; see [Tracking input](docs/inference.md#tracking-input).
 
 Input NPZ files must contain `emg` (finite real array `[samples,16]`),
 `sampling_rate_hz` (scalar `2000`) and `channel_names` (Unicode strings `c1` through
-`c16`, in the supplied array's order). Use `numpy.savez` with these keys; object
-arrays are rejected. Preserve the native emg2pose signal amplitude scale: the
-source does not specify a physical voltage unit, and this API does not normalize
-or convert it. Other sensors/scales are not validated.
+`c16`, in the supplied array's order). Preserve the native emg2pose amplitude scale;
+the API does not normalize it. Other sensors/scales are not validated.
 
 Official emg2pose HDF5 recordings can be passed directly with the `data` extra.
-Only EMG and timestamps are read, never target poses. Datasets are not bundled;
-see the [emg2pose source and data terms](https://github.com/facebookresearch/emg2pose).
-`--max-windows 1` limits decoding for a smoke check while preserving filtering
-of the entire recording. Output files are never overwritten.
-
-To check file handling before using real data, create a **synthetic smoke input**
-and use `--input smoke-input.npz`. This constant signal does not test accuracy:
-
-```bash
-python - <<'PY'
-import numpy as np
-np.savez("smoke-input.npz", emg=np.zeros((14000, 16), dtype=np.float32),
-         sampling_rate_hz=2000,
-         channel_names=np.array([f"c{i}" for i in range(1, 17)]))
-PY
-```
-
-The same path is available in Python:
-
-```python
-import numpy as np
-from emg_gpt import PosePredictor
-
-model = PosePredictor("weights/regression", "weights/NeuroRVQ_EMG_tokenizer_v1.pt")
-with np.load("recording.npz", allow_pickle=False) as data:
-    result = model.predict(
-        data["emg"], sampling_rate_hz=data["sampling_rate_hz"].item(),
-        channel_names=data["channel_names"].tolist(),
-    )
-result.save("prediction-python.npz")
-```
+Only EMG and timestamps are read. Datasets are not bundled; see the
+[emg2pose source and data terms](https://github.com/facebookresearch/emg2pose).
+For a synthetic input, the Python API and output fields, use the
+[inference guide](docs/inference.md).
 
 ## Protocol and output
 
 The frontend filters the whole 2-kHz recording at 20–399.5 Hz, resamples to
 1 kHz and tokenizes independent 200-sample patches every 40 samples. Zero-phase
-filtering makes this an **offline** pipeline. Do not prefilter, resample, normalize
-or process independent chunks and expect identical results.
+filtering makes this an **offline** pipeline; supply the complete raw recording.
 
-Predictions have shape `[windows,250,20]`, in radians at 50 Hz. Each window uses
-150 token frames and scores the final 125. A full window needs at least 13,119
-raw samples. Regression starts at 1.20 s and leaves one-second gaps between scored
-windows. Timestamps and a coverage mask expose warm-up, gaps and the unscored tail.
-Joint order, saved fields and Tracking initialization are specified in
-[the inference contract](docs/inference.md).
-
-Tracking requires one explicit 20-joint boundary pose **per window**, at the
-planner's boundary timestamps. The first boundary is 1.24 s. Recurrent state resets
-between windows; ground truth is never inferred or extracted automatically.
-Comparisons must use the same alignment, coverage and initialization protocol.
+Predictions are `[windows,250,20]` joint angles in radians at 50 Hz. A full window
+needs at least 13,119 raw samples. Timestamps and a coverage mask identify warm-up,
+inter-window gaps and the unscored tail. Tracking requires explicit boundary poses;
+target poses are never read automatically. See the guide for exact alignment.
 
 ## Verification
 
-```bash
-python -m pip install '.[dev,data]' -c constraints/cpu-tested.txt
-python -m pytest
-ruff check src scripts tests
-python scripts/check_release.py --profile review
-python -m build
-```
-
-Tests cover token positions/layout, input validation, bundle identity, CLI and
-installed-package isolation. CI checks the pinned CPU environment on Python 3.11
-and 3.12, plus minimum runtime dependencies on Python 3.11.
-Real-checkpoint parity is checked separately against the research tokenizer,
-dataset and original pose checkpoints. These checks are implementation checks,
-not a rerun of the paper's benchmark; see the [inference contract](docs/inference.md).
+CI checks Python 3.11/3.12, dependencies, input validation and installed packages.
+Release outputs were also compared against the original implementation on real
+recordings and checkpoints. Those compatibility checks ran on CPU; CUDA inference
+has not yet been checked for release parity. Commands and exact test scope are in
+[the inference guide](docs/inference.md#reproducibility).
 
 ## Citation
 
@@ -215,7 +161,9 @@ not a rerun of the paper's benchmark; see the [inference contract](docs/inferenc
 ```
 
 Machine-readable metadata: [CITATION.cff](CITATION.cff).
-The frozen tokenizer is adapted from [NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ).
-The inherited [CC BY-NC 4.0 license](LICENSE) and
-[third-party notices](THIRD_PARTY_NOTICES.md) are retained. Maintainer confirmation
-of the new-code license and weight redistribution remains pending.
+
+## License
+
+Code and EMG-GPT model weights: [CC BY-NC 4.0](LICENSE). The tokenizer is adapted from
+[NeuroRVQ](https://github.com/KonstantinosBarmpas/NeuroRVQ); retained third-party
+components and their licenses are listed in [third-party notices](THIRD_PARTY_NOTICES.md).

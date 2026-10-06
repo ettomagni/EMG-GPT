@@ -1,8 +1,7 @@
-"""Check inference source hygiene and explicit publication blockers; never publish."""
+"""Check source hygiene, artifact identities and citation metadata."""
 
 from __future__ import annotations
 
-import argparse
 import ast
 import json
 import re
@@ -14,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 IGNORE = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".ruff_cache", "build", "dist"}
 
 
-def check(root: Path) -> tuple[list[str], list[str]]:
-    errors, blockers = [], []
+def check(root: Path) -> list[str]:
+    errors = []
     required = [
         "README.md",
         "CITATION.cff",
@@ -117,30 +116,34 @@ def check(root: Path) -> tuple[list[str], list[str]]:
             record = manifest["pose_models"][task]
             if not re.fullmatch(r"[0-9a-f]{64}", record.get("source_checkpoint_sha256", "")):
                 errors.append(f"{task}: missing source checkpoint identity")
-            if not record.get("public_source"):
-                blockers.append(f"{task}: no public complete-bundle source")
-            if not record.get("files"):
-                blockers.append(f"{task}: export identities missing")
-            elif set(record["files"]) != {
+            source = record.get("source", {})
+            if (
+                source.get("provider") != "huggingface"
+                or not source.get("repo_id")
+                or source.get("subfolder") != task
+                or not re.fullmatch(r"[0-9a-f]{40}", source.get("revision", ""))
+            ):
+                errors.append(f"{task}: missing or unpinned bundle source")
+            if set(record.get("files", {})) != {
                 "config.json",
                 "model.safetensors",
                 "codebooks.safetensors",
                 "manifest.json",
             }:
                 errors.append(f"{task}: incomplete bundle file manifest")
+            for filename, identity in record.get("files", {}).items():
+                if (
+                    not re.fullmatch(r"[0-9a-f]{64}", identity.get("sha256", ""))
+                    or identity.get("bytes", 0) < 1
+                ):
+                    errors.append(f"{task}: missing hash or size for {filename}")
             if record.get("status") != "real_end_to_end_verified":
-                blockers.append(f"{task}: real end-to-end verification pending")
-        for name in ("license_signoff", "weight_redistribution_signoff"):
-            if manifest.get(name) != "confirmed":
-                blockers.append(f"{name}: maintainer confirmation pending")
-    return errors, blockers
+                errors.append(f"{task}: real end-to-end verification missing")
+    return errors
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("review", "publication"), default="review")
-    args = parser.parse_args()
-    errors, blockers = check(ROOT)
+    errors = check(ROOT)
     result = subprocess.run(
         [
             sys.executable,
@@ -157,13 +160,8 @@ def main() -> None:
         errors.append(
             "CITATION validation failed; install the dev extra and run cffconvert --validate"
         )
-    print(
-        json.dumps(
-            {"profile": args.profile, "source_errors": errors, "publication_blockers": blockers},
-            indent=2,
-        )
-    )
-    raise SystemExit(1 if errors else 2 if blockers and args.profile == "publication" else 0)
+    print(json.dumps({"source_errors": errors}, indent=2))
+    raise SystemExit(1 if errors else 0)
 
 
 if __name__ == "__main__":

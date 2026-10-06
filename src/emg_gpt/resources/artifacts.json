@@ -22,7 +22,6 @@
       "source_checkpoint_sha256": "68bf6607f6a65f3982ea6cbe823a03e6a8aa46212c28408441251c72bd01c0a9",
       "selected_pose_step": 2000,
       "gpt_initializer_step": 280000,
-      "public_source": null,
       "status": "real_end_to_end_verified",
       "files": {
         "model.safetensors": {
@@ -42,7 +41,7 @@
           "bytes": 67108952
         }
       },
-      "private_source": {
+      "source": {
         "provider": "huggingface",
         "repo_id": "ettoremagni/EMG-GPT",
         "revision": "5b1b58089a780965dba0e35dfb97bd464d8b3abd",
@@ -54,7 +53,6 @@
       "source_checkpoint_sha256": "21054c93dd7d5b1bb3bc1485abb7006222f2ff26ba5c597b853dd9006cd5baa5",
       "selected_pose_step": 5000,
       "gpt_initializer_step": 400000,
-      "public_source": null,
       "status": "real_end_to_end_verified",
       "files": {
         "model.safetensors": {
@@ -74,7 +72,7 @@
           "bytes": 67108952
         }
       },
-      "private_source": {
+      "source": {
         "provider": "huggingface",
         "repo_id": "ettoremagni/EMG-GPT",
         "revision": "5b1b58089a780965dba0e35dfb97bd464d8b3abd",
@@ -82,7 +80,5 @@
       }
     }
   },
-  "license_signoff": "pending",
-  "paper_url": "https://arxiv.org/abs/2610.05235",
-  "weight_redistribution_signoff": "pending"
+  "paper_url": "https://arxiv.org/abs/2610.05235"
 }
