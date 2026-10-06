@@ -1,6 +1,9 @@
 import json
+import os
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -29,6 +32,46 @@ def test_integrity_before_deserialization(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="SHA-256"):
         fetch_tokenizer(path)
     verify_file(path, {"bytes": path.stat().st_size, "sha256": sha256(path)})
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permission semantics")
+@pytest.mark.parametrize("mask", [0o022, 0o002, 0o077])
+def test_saved_predictions_and_tokenizer_follow_umask(tmp_path, monkeypatch, mask):
+    cached = tmp_path / "cached.pt"
+    cached.write_bytes(b"tokenizer download fixture")
+    cached.chmod(0o600)
+    artifact = {
+        "bytes": cached.stat().st_size,
+        "sha256": sha256(cached),
+        "public_source": {"repo_id": "fixture", "revision": "a" * 40, "filename": cached.name},
+    }
+    monkeypatch.setattr("emg_gpt.artifacts.resource_json", lambda _: {"tokenizer": artifact})
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(hf_hub_download=lambda **kwargs: str(cached)),
+    )
+    prediction = PosePrediction(
+        np.zeros((1, 250, 20), dtype=np.float32),
+        np.arange(2400, 12400, 40)[None],
+        np.zeros(350, dtype=bool),
+        np.array([0]),
+        {"synthetic": True},
+    )
+    output = tmp_path / "output"
+    previous = os.umask(mask)
+    try:
+        prediction.save(output / "prediction.npz")
+        fetch_tokenizer(output / "tokenizer.pt")
+    finally:
+        os.umask(previous)
+    assert {path.name for path in output.iterdir()} == {"prediction.npz", "tokenizer.pt"}
+    for path in output.iterdir():
+        assert stat.S_IMODE(path.stat().st_mode) == 0o666 & ~mask
+    assert stat.S_IMODE(cached.stat().st_mode) == 0o600
+    assert (output / "tokenizer.pt").read_bytes() == cached.read_bytes()
+    with np.load(output / "prediction.npz", allow_pickle=False) as saved:
+        np.testing.assert_array_equal(saved["joint_angles_rad"], prediction.joint_angles_rad)
 
 
 def test_npz_input_metadata(tmp_path):

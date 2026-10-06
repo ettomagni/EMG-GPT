@@ -150,9 +150,6 @@ Joint order is thumb CMC-FE, CMC-AA, MCP-FE, IP-FE; then index, middle, ring and
 pinky, each MCP-AA, MCP-FE, PIP-FE, DIP-FE. FE denotes flexion/extension and AA
 abduction/adduction, using the pinned emg2pose convention.
 
-Saved predictions and downloaded tokenizer files default to owner-only access
-(`0600`). Set group permissions explicitly if sharing these files.
-
 ## Reproducibility
 
 Install the tested CPU dependencies, then run the lightweight checks:

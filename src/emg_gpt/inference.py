@@ -110,9 +110,9 @@ class PosePrediction:
         if destination.exists():
             raise FileExistsError(f"Output already exists: {destination}")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:
-            staged = Path(handle.name)
-        try:
+        # A private staging directory keeps incomplete files hidden while honoring the umask.
+        with tempfile.TemporaryDirectory(dir=destination.parent) as directory:
+            staged = Path(directory) / destination.name
             with staged.open("wb") as handle:
                 np.savez_compressed(
                     handle,
@@ -127,8 +127,6 @@ class PosePrediction:
                     metadata_json=np.asarray(json.dumps(self.metadata, sort_keys=True)),
                 )
             os.link(staged, destination)
-        finally:
-            staged.unlink(missing_ok=True)
 
 
 def _validate_frontend(model, task: str, contract: dict) -> None:

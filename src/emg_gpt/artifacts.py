@@ -51,12 +51,10 @@ def fetch_tokenizer(destination: Path | str) -> Path:
     )
     verify_file(cached, artifact)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:
-        staged = Path(handle.name)
-    try:
+    # A private staging directory keeps incomplete files hidden while honoring the umask.
+    with tempfile.TemporaryDirectory(dir=destination.parent) as directory:
+        staged = Path(directory) / destination.name
         shutil.copyfile(cached, staged)
         verify_file(staged, artifact)
         os.link(staged, destination)
-    finally:
-        staged.unlink(missing_ok=True)
     return destination
