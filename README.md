@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="images/banner.png" width="600" alt="EMG-GPT: from EMG signals to hand pose">
+
 # EMG-GPT
 
 **Predictive Pretraining on Residual-Quantized EMG Tokens for Hand Pose Estimation**
